@@ -1,0 +1,56 @@
+# ==============================================================================
+# AgentShield + JARVIS - Security & Build Exclusions (.gitignore)
+# ==============================================================================
+
+# Environment variables & secrets (Never commit secrets or active environment configs)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Databases & Local Storage (Prevents credential & incident leak)
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/agentshield.db
+agentshield.db
+
+# Python bytecode, virtual environments & test caches
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+backend/.venv/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js dependencies & build artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+build/
+frontend/tsconfig.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor & OS artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: agentshield-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - AGENTSHIELD_JWT_SECRET=${AGENTSHIELD_JWT_SECRET:-agentshield-super-secure-production-secret-key-32bytes-min}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+    volumes:
+      - ./backend/agentshield.db:/app/agentshield.db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: agentshield-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
