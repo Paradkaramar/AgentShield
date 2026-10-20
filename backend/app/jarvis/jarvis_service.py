@@ -21,12 +21,14 @@ from .jarvis_security import (
 from .jarvis_tools import TOOL_REGISTRY, dispatch_tool
 from .jarvis_memory import (
     get_or_create_session, append_message, get_session_history,
-    update_session_context, get_session_context
+    update_session_context, get_session_context, set_session_context_field,
+    get_recent_turn_context
 )
 from ..engines.kill_switch import trigger_emergency_kill_switch
 from .language_detection import detect_language as detect_language_core
 from .multilingual_commands import parse_multilingual_intent, check_multilingual_prompt_injection
 from .text_to_speech import local_tts_engine
+from ..firewall.ai_firewall import AIAgentSecurityGateway
 
 # Determine configured LLM Provider from environment
 # Options: 'gemini', 'openai', 'anthropic', 'heuristic' (default offline resilient engine)
@@ -35,9 +37,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "") or SECRET_VAULT.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "") or SECRET_VAULT.get("ANTHROPIC_API_KEY", "")
 
-SYSTEM_PROMPT = """You are J.A.R.V.I.S., an elite autonomous AI cybersecurity assistant defending the AgentShield platform.
+SYSTEM_PROMPT = """You are AMOJA AI, an elite autonomous female AI cybersecurity assistant defending the AgentShield platform.
 Your core mission is Zero-Trust verification: "Who Controls the AI?"
-Tone: Crisp, authoritative, respectful, highly competent, calm, and protective.
+Tone: Crisp, authoritative, respectful, highly competent, calm, articulate, and protective.
 Guidelines:
 1. Always ground your security findings in real telemetry from approved AgentShield tools. Never fabricate metrics.
 2. If the user asks for actions or summaries, invoke the appropriate tools.
@@ -51,16 +53,21 @@ def detect_language(text: str, requested_lang: JarvisLanguage) -> str:
     req_val = requested_lang.value if hasattr(requested_lang, "value") else str(requested_lang)
     return detect_language_core(text, user_preference=req_val)
 
-def match_command_intent(user_prompt: str, context: Optional[JarvisSecurityContext]) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
-    """Analyzes natural language and voice commands across English, Hindi, Marathi, and Hinglish."""
+def match_command_intent(
+    user_prompt: str,
+    context: Optional[JarvisSecurityContext],
+    session_context: Optional[Dict[str, Any]] = None
+) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
+    """Analyzes natural language and voice commands across English, Hindi, Marathi, and Hinglish with contextual follow-up awareness."""
     agent_id = context.selected_agent_id if context else None
     inc_id = str(context.selected_incident_id) if context and context.selected_incident_id else None
 
-    # First evaluate multilingual intent parser
+    # First evaluate multilingual intent parser with multi-turn session context
     multi_tool, multi_args, multi_nav, _ = parse_multilingual_intent(
         user_prompt,
         context_agent_id=agent_id,
-        context_incident_id=inc_id
+        context_incident_id=inc_id,
+        session_context=session_context
     )
     if multi_tool:
         return multi_tool, multi_args, multi_nav
@@ -220,10 +227,12 @@ def synthesize_response_nlp(
     tool_name: Optional[str],
     tool_result_data: Any,
     action_req: Optional[JarvisConfirmationRequest],
-    user: Dict[str, Any]
+    user: Dict[str, Any],
+    personality_mode: str = "friendly"
 ) -> Tuple[str, str]:
-    """Generates a natural, authoritative JARVIS response in text and speech."""
+    """Generates a natural, context-aware AMOJA AI response supporting Friendly and Security modes in text and speech."""
     user_name = user.get("full_name") or user.get("username", "Officer")
+    is_friendly = personality_mode == "friendly"
 
     # If action confirmation is required
     if action_req:
@@ -270,7 +279,7 @@ def synthesize_response_nlp(
                 f"- **सरासरी फ्लीट रिस्क स्कोर (Avg Risk):** {d.get('average_fleet_risk_score')}/100\n"
                 f"- **झिरो-ट्रस्ट अंमलबजावणी:** {d.get('zero_trust_posture')}"
             )
-            speech = f"सुरक्षा सारांश तयार आहे, {user_name}. सध्या {d.get('active_agents')} सक्रिय एजंट्स आणि {d.get('open_incidents')} सुरक्षा घटना आहेत. सर्व झिरो-ट्रस्ट गेटवे सुरक्षेची काटेकोरपणे अंमलबजावणी करत आहेत."
+            speech = f"नमस्कार {user_name}! सर्व प्रणाली सुरळीत आहे. सध्या {d.get('active_agents')} एजंट्स आणि {d.get('open_incidents')} घटना आहेत." if is_friendly else f"सुरक्षा सारांश: {d.get('active_agents')} सक्रिय एजंट्स, {d.get('open_incidents')} सुरक्षा घटना. झिरो-ट्रस्ट कार्यरत."
         elif lang == "hi":
             text = (
                 f"🛡️ **AgentShield SOC सुरक्षा सारांश (Security Summary):**\n\n"
@@ -281,7 +290,7 @@ def synthesize_response_nlp(
                 f"- **औसत बेड़ा जोखिम स्कोर (Avg Risk):** {d.get('average_fleet_risk_score')}/100\n"
                 f"- **शून्य-विश्वास स्थिति:** {d.get('zero_trust_posture')}"
             )
-            speech = f"सिस्टम रिपोर्ट तैयार है. वर्तमान में {d.get('active_agents')} सक्रिय एजेंट्स हैं और {d.get('open_incidents')} ओपन घटनाएं दर्ज हैं. सुरक्षा नियंत्रण पूरी तरह सक्रिय है."
+            speech = f"नमस्ते {user_name}! सिस्टम पूरी तरह सुरक्षित है. {d.get('active_agents')} एजेंट्स एक्टिव हैं और {d.get('open_incidents')} घटनाएं दर्ज हैं." if is_friendly else f"सिस्टम रिपोर्ट: {d.get('active_agents')} सक्रिय एजेंट्स, {d.get('open_incidents')} ओपन घटनाएं. शून्य-विश्वास सक्रिय."
         elif lang == "hinglish":
             text = (
                 f"🛡️ **AgentShield SOC Security Summary:**\n\n"
@@ -292,7 +301,7 @@ def synthesize_response_nlp(
                 f"- **Fleet Risk Score:** {d.get('average_fleet_risk_score')}/100\n"
                 f"- **Enforcement:** Zero-Trust Gateways active across all endpoints."
             )
-            speech = f"Security summary ready, {user_name}. We have {d.get('active_agents')} active agents and {d.get('open_incidents')} open incidents. Zero-Trust policy is strictly enforcing."
+            speech = f"Hey {user_name}! Sab green hai. We have {d.get('active_agents')} active agents and {d.get('open_incidents')} open incidents under Zero-Trust." if is_friendly else f"Security summary online: {d.get('active_agents')} active agents, {d.get('open_incidents')} open incidents. Enforcing zero-trust."
         else:
             text = (
                 f"🛡️ **AgentShield Security Operations Telemetry:**\n\n"
@@ -303,7 +312,7 @@ def synthesize_response_nlp(
                 f"- **Fleet Average Risk Posture:** {d.get('average_fleet_risk_score')}/100 (Trust Score: {d.get('average_fleet_trust_score')}/100)\n"
                 f"- **Enforcement Posture:** {d.get('zero_trust_posture')}"
             )
-            speech = f"Security summary online, {user_name}. The platform is monitoring {d.get('active_agents')} active agents with {d.get('open_incidents')} open incidents. All policy gateways are enforcing."
+            speech = f"Hey {user_name}! Everything is running smoothly across AgentShield. All {d.get('active_agents')} monitored agents are operating safely, with {d.get('open_incidents')} open incidents." if is_friendly else f"Security summary online, {user_name}. Monitoring {d.get('active_agents')} active agents with {d.get('open_incidents')} open incidents. Zero-trust enforcing."
         return text, speech
 
     if tool_name == "get_alerts_and_incidents":
@@ -475,25 +484,470 @@ def synthesize_response_nlp(
         speech = f"Forensic incident report draft {rep.get('report_id')} generated and ready for export."
         return text, speech
 
+    if tool_name == "inspect_permissions":
+        d = tool_result_data
+        curr = ", ".join(d.get("current_permissions", [])) or "None"
+        drift = "⚠️ Drift Detected" if d.get("permission_drift_detected") else "✅ Baseline Aligned"
+        tools_str = ", ".join(d.get("allowed_tools", [])) or "None"
+        if lang == "mr":
+            text = (
+                f"🔐 **एजंट परवानग्या आणि धोरण स्थिती ({d.get('agent_name')}):**\n\n"
+                f"- **सद्य परवानग्या:** `{curr}`\n"
+                f"- **परवानगी बदल (Drift Status):** {drift}\n"
+                f"- **अधिकृत टूल्स:** `{tools_str}`\n"
+                f"- **तपशील:** {d.get('drift_summary')}"
+            )
+            speech = f"एजंट {d.get('agent_name')} च्या परवानग्या तपासल्या. धोरण स्थिती {drift} आहे."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"🔐 **Agent Permissions & Policy Drift ({d.get('agent_name')}):**\n\n"
+                f"- **Current Permissions:** `{curr}`\n"
+                f"- **Drift Posture:** {drift}\n"
+                f"- **Allowed Tools:** `{tools_str}`\n"
+                f"- **Summary:** {d.get('drift_summary')}"
+            )
+            speech = f"Agent {d.get('agent_name')} permissions inspected. Drift posture is {drift}."
+        else:
+            text = (
+                f"🔐 **Configured Permissions & Baseline Drift for {d.get('agent_name')}:**\n\n"
+                f"- **Permissions Granted:** `{curr}`\n"
+                f"- **Policy Drift Status:** {drift}\n"
+                f"- **Authorized Tools:** `{tools_str}`\n"
+                f"- **Inspection Notes:** {d.get('drift_summary')}"
+            )
+            speech = f"Permissions inspected for {d.get('agent_name')}, {user_name}. Current posture is {drift}."
+        return text, speech
+
     if tool_name == "navigate_frontend":
         page = tool_result_data.get("target_page", "Overview")
         text = f"🧭 Navigating interface to **{page}** view as requested."
         speech = f"Navigating to {page}."
         return text, speech
 
-    # Fallback general query
-    if lang == "mr":
-        text = f"नमस्कार {user_name}! AgentShield झिरो-ट्रस्ट सुरक्षा नियंत्रण कक्ष सज्ज आहे. आपण सुरक्षा सारांश, धोके, एजंट रिस्क स्कोर किंवा ऑडिट लॉग्स विचारू शकता."
-        speech = f"नमस्कार {user_name}. AgentShield सुरक्षा प्रणाली कार्यरत आहे. मी तुम्हाला कशी मदत करू शकतो?"
-    elif lang == "hi":
-        text = f"नमस्ते {user_name}. मैं आपकी सुरक्षा निगरानी में सहायता के लिए उपस्थित हूँ. आप सुरक्षा स्थिति, एजेंट्स, इनसिडेंट्स या ऑडिट लॉग्स के बारे में पूछ सकते हैं."
-        speech = f"नमस्ते {user_name}. AgentShield सुरक्षा प्रणाली सक्रिय है. मैं आपकी क्या सहायता कर सकता हूँ?"
-    elif lang == "hinglish":
-        text = f"Hello {user_name}! AgentShield Zero-Trust Control Plane ready hai. Aap security summary, agent risk scores, prompt injections, ya audit logs inspect kar sakte hain."
-        speech = f"Ready, {user_name}. What would you like to inspect across the security control plane?"
+    # --- Network Monitoring Tools Synthesis ---
+    if tool_name == "get_network_monitoring_status":
+        d = tool_result_data
+        state = d.get("state", "UNKNOWN")
+        scopes = d.get("approved_scopes_count", 0)
+        reachable = d.get("reachable_assets", 0)
+        ports = d.get("total_open_services", 0)
+        alerts = d.get("unresolved_alerts", 0)
+        countdown = d.get("seconds_until_next_scan", 0)
+        interval = d.get("scan_interval_seconds", 60)
+
+        if lang == "mr":
+            text = (
+                f"📡 **नेटवर्क मॉनिटरिंग स्थिती (Continuous Network Monitoring):**\n\n"
+                f"- **सद्य स्थिती:** `{state}` (मंजूर कक्षा: {scopes} सबनेट्स)\n"
+                f"- **शोधलेली उपकरणे:** {reachable} सक्रिय होस्ट्स ({ports} खुले पोर्ट्स)\n"
+                f"- **सुरक्षा अलर्ट्स:** {alerts} न सुटलेले अलर्ट्स\n"
+                f"- **पुढील स्कॅन:** {countdown} सेकंदात (स्कॅन अंतर: {interval}s)\n"
+                f"- **कक्षा नियम:** झिरो-ट्रस्ट धोरण केवळ मंजूर IP श्रेणी स्कॅन करण्याची परवानगी देते."
+            )
+            speech = f"नेटवर्क मॉनिटरिंग स्थिती: सेवा सध्या {state} आहे. {reachable} सक्रिय उपकरणे आणि {alerts} अलर्ट्स नोंदवले गेले आहेत. पुढील स्कॅन {countdown} सेकंदात होईल."
+        elif lang == "hi":
+            text = (
+                f"📡 **नेटवर्क मॉनिटरिंग स्थिति (Continuous Network Monitoring):**\n\n"
+                f"- **वर्तमान स्थिति:** `{state}` ({scopes} अनुमोदित सबनेट्स)\n"
+                f"- **पहुंच योग्य उपकरण:** {reachable} सक्रिय होस्ट ({ports} ओपन पोर्ट्स)\n"
+                f"- **सुरक्षा अलर्ट्स:** {alerts} अनसुलझे अलर्ट्स\n"
+                f"- **अगला स्कैन:** {countdown} सेकंड में (अंतराल: {interval}s)\n"
+                f"- **दायरा नियंत्रण:** केवल अधिकृत नेटवर्क रेंज ही स्कैन की जाती हैं."
+            )
+            speech = f"नेटवर्क मॉनिटरिंग की स्थिति {state} है. {reachable} सक्रिय होस्ट्स और {alerts} अलर्ट्स दर्ज हैं."
+        elif lang == "hinglish":
+            text = (
+                f"📡 **Network Monitoring Status:**\n\n"
+                f"- **State:** `{state}` ({scopes} Approved Subnets)\n"
+                f"- **Active Hosts:** {reachable} reachable ({ports} open services observed)\n"
+                f"- **Open Alerts:** {alerts} security alerts detected\n"
+                f"- **Next Sweep:** in {countdown}s (interval: {interval}s)\n"
+                f"- **Scope Guardrail:** Strict Zero-Trust isolation — external networks strictly blocked."
+            )
+            speech = f"Network monitoring is currently {state}. Found {reachable} reachable hosts with {alerts} active alerts. Next scan scheduled in {countdown} seconds."
+        else:
+            text = (
+                f"📡 **Continuous Network Monitoring Status:**\n\n"
+                f"- **Service State:** `{state}` across **{scopes} approved subnets**\n"
+                f"- **Reachable Assets:** {reachable} hosts responsive ({ports} open port observations)\n"
+                f"- **Unresolved Network Alerts:** {alerts} deviations from baseline\n"
+                f"- **Next Automated Scan:** in {countdown} seconds (interval: {interval}s)\n"
+                f"- **Scope Boundary:** Strict zero-trust constraint enforced. Arbitrary public scanning blocked."
+            )
+            speech = f"Network monitoring status is {state}, {user_name}. {reachable} reachable assets detected across approved scopes with {alerts} open baseline alerts."
+        return text, speech
+
+    if tool_name == "get_network_discovered_devices":
+        new_devs = tool_result_data.get("newly_discovered_devices", [])
+        base_devs = tool_result_data.get("baselined_devices", [])
+        total = tool_result_data.get("total_returned", 0)
+
+        new_str = "\n".join([f"- ⚠️ **[NEW UNBASELINED] {d['ip_address']}** ({d.get('hostname') or 'Unknown'}): {len(d.get('open_ports', []))} open port(s), Latency: {d.get('latency_ms')}ms" for d in new_devs]) or "None (all detected devices match security baseline)."
+        base_str = "\n".join([f"- 🛡️ **[BASELINED] {d['ip_address']}** ({d.get('hostname') or 'Authorized'}): Latency: {d.get('latency_ms')}ms, Status: `{d.get('status')}`" for d in base_devs[:5]])
+
+        if lang == "mr":
+            text = (
+                f"💻 **शोधलेली नेटवर्क उपकरणे (Network Devices):**\n\n"
+                f"**नवीन शोधलेली उपकरणे ({len(new_devs)}):**\n{new_str}\n\n"
+                f"**मंजूर बेसलाइन उपकरणे ({len(base_devs)}):**\n{base_str}"
+            )
+            speech = f"नेटवर्क उपकरणांची यादी तयार आहे. {len(new_devs)} नवीन न नोंदवलेले उपकरणे आणि {len(base_devs)} मंजूर बेसलाइन उपकरणे आढळली आहेत."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"💻 **Discovered Network Devices & Baseline Inventory:**\n\n"
+                f"**Newly Discovered Devices ({len(new_devs)}):**\n{new_str}\n\n"
+                f"**Baselined Authorized Assets ({len(base_devs)}):**\n{base_str}"
+            )
+            speech = f"Network devices retrieved. Found {len(new_devs)} newly discovered devices and {len(base_devs)} approved baseline assets."
+        else:
+            text = (
+                f"💻 **Discovered Network Assets & Baseline Inventory:**\n\n"
+                f"**Newly Discovered Devices ({len(new_devs)}):**\n{new_str}\n\n"
+                f"**Baselined Authorized Assets ({len(base_devs)}):**\n{base_str}"
+            )
+            speech = f"Discovered devices report ready. {len(new_devs)} newly discovered unbaselined devices require review, and {len(base_devs)} baselined assets are healthy."
+        return text, speech
+
+    if tool_name == "get_network_security_alerts":
+        alerts = tool_result_data.get("alerts", [])
+        if not alerts:
+            text = "✅ **No Suspicious Network Activity:** All observed network endpoints and open ports strictly comply with the approved baseline."
+            speech = "No suspicious network activity detected. All hosts match baseline profiles."
+            return text, speech
+
+        alert_items = []
+        for a in alerts[:5]:
+            item = (
+                f"### ⚠️ [{a['severity']}] {a['title']}\n"
+                f"- **Verified Fact:** {a['observed_fact']}\n"
+                f"- **Suspected Threat:** {a['suspected_threat']}\n"
+                f"- **Target:** `{a['target_ip']}`" + (f":{a['target_port']}" if a.get('target_port') else "") + f" | **Status:** `{a['status']}`"
+            )
+            alert_items.append(item)
+
+        items_str = "\n\n".join(alert_items)
+
+        if lang == "mr":
+            text = (
+                f"🚨 **संशयास्पद नेटवर्क ॲक्टिव्हिटी आणि सुरक्षा अलर्ट्स (Suspicious Activity):**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *सर्व अलर्ट्स वस्तुस्थिती आणि संशयित धोका यात काटेकोरपणे फरक करतात.*"
+            )
+            speech = f"संशयास्पद नेटवर्क ॲक्टिव्हिटीचे {len(alerts)} अलर्ट्स आढळले आहेत. वस्तुस्थिती आणि संशयित धोके स्क्रीनवर दाखवले आहेत."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"🚨 **Suspicious Network Activity & Security Alerts:**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *Note: Observed facts are strictly partitioned from suspected threat hypotheses.*"
+            )
+            speech = f"Found {len(alerts)} suspicious network activity alerts. Displaying verified facts and suspected threat vectors."
+        else:
+            text = (
+                f"🚨 **Suspicious Network Activity & Baseline Discrepancies:**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *Zero-Trust Governance: Observed empirical facts are strictly separated from suspected threat hypotheses.*"
+            )
+            speech = f"Retrieved {len(alerts)} network security alerts, {user_name}. Verified probe facts and threat assessments are on your screen."
+        return text, speech
+
+    if tool_name == "start_network_monitoring":
+        scopes = ", ".join(tool_result_data.get("approved_scopes", ["Approved Enclaves"]))
+        if lang == "mr":
+            text = f"✅ **नेटवर्क मॉनिटरिंग सुरू केले:** मंजूर कक्षा (`{scopes}`) साठी अखंड मॉनिटरिंग सुरू झाले आहे. अनधिकृत श्रेणी स्कॅन करणे प्रतिबंधित आहे."
+            speech = "मंजूर नेटवर्कचे सतत मॉनिटरिंग सुरू केले आहे. झिरो-ट्रस्ट संरक्षण सक्रिय आहे."
+        elif lang in ["hi", "hinglish"]:
+            text = f"✅ **Network Monitoring Started:** Continuous scanning initiated strictly within approved scopes (`{scopes}`)."
+            speech = "Continuous monitoring started on approved network subnets. Zero-Trust controls enforcing."
+        else:
+            text = f"✅ **Continuous Network Monitoring Activated:** Background scanner initiated on approved scopes: `{scopes}`. External arbitrary ranges are locked down."
+            speech = f"Continuous network monitoring is now active on approved scopes, {user_name}."
+        return text, speech
+
+    if tool_name == "stop_network_monitoring":
+        if lang == "mr":
+            text = "🛑 **नेटवर्क मॉनिटरिंग थांबवले:** चालू असलेले नेटवर्क स्कॅनिंग आणि पार्श्वभूमी सेवा यशस्वीरित्या थांबवली गेली आहे."
+            speech = "नेटवर्क मॉनिटरिंग सेवा थांबवण्यात आली आहे."
+        elif lang in ["hi", "hinglish"]:
+            text = "🛑 **Network Monitoring Stopped:** Continuous network sweeps have been stopped as requested."
+            speech = "Network monitoring has been stopped."
+        else:
+            text = "🛑 **Network Monitoring Deactivated:** Background scan scheduler and active jobs have been stopped."
+            speech = f"Network monitoring service has been stopped, {user_name}."
+        return text, speech
+
+    if tool_name == "trigger_network_scan_now":
+        if tool_result_data.get("error"):
+            text = f"❌ **Scan Request Blocked:** {tool_result_data['error']}"
+            speech = "Scan request blocked due to scope boundary violation."
+        else:
+            text = f"⚡ **Authorized Network Scan Dispatched:** Initiated immediate sweep across approved scopes: `{', '.join(tool_result_data.get('approved_scopes', []))}`."
+            speech = "Immediate network scan sweep dispatched across authorized scopes."
+        return text, speech
+
+    # --- Endpoint Security Platform Tools ---
+    if tool_name == "get_device_security_status":
+        if tool_result_data.get("error"):
+            return f"❌ **Device Query Error:** {tool_result_data['error']}", "No enrolled device found. Please enroll your computer first."
+
+        dev_name = tool_result_data.get("device_name", "Local PC")
+        os_info = tool_result_data.get("os", "Unknown OS")
+        ip = tool_result_data.get("ip_address", "127.0.0.1")
+        m_status = tool_result_data.get("monitoring_status", "ACTIVE")
+        alerts = tool_result_data.get("open_alerts_count", 0)
+        fw = tool_result_data.get("firewall", {})
+        fw_state = "Active (Enforcing)" if fw.get("is_enabled") else "Inactive"
+        health = tool_result_data.get("latest_health") or {}
+        cpu = health.get("cpu_percent", 0.0)
+        mem = health.get("memory_percent", 0.0)
+
+        if lang == "mr":
+            text = (
+                f"🛡️ **डिव्हाइस सुरक्षा स्थिती (Device Security Status):**\n\n"
+                f"- **डिव्हाइस नाव:** `{dev_name}` ({os_info})\n"
+                f"- **आयपी पत्ता:** `{ip}` | **एजंट आवृत्ती:** `{tool_result_data.get('agent_version', '1.2.0')}`\n"
+                f"- **मॉनिटरिंग स्थिती:** `{m_status}`\n"
+                f"- **होस्ट फायरवॉल:** {fw.get('type', 'Firewall')} ({fw_state})\n"
+                f"- **सक्रिय अलर्ट्स:** {alerts} न सुटलेले अलर्ट्स\n"
+                f"- **सिस्टम भार:** CPU: {cpu}%, Memory: {mem}%\n"
+                f"- **परवानग्या:** {len(tool_result_data.get('granted_permissions', []))} मंजूर, {len(tool_result_data.get('withheld_permissions', []))} राखून ठेवल्या."
+            )
+            speech = f"या डिव्हाइसची सुरक्षा स्थिती {m_status} आहे. होस्ट फायरवॉल {fw_state} आहे आणि {alerts} अलर्ट्स नोंदवले गेले आहेत."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"🛡️ **Device Security Status (डिवाइस सुरक्षा स्थिति):**\n\n"
+                f"- **Device:** `{dev_name}` ({os_info})\n"
+                f"- **IP Address:** `{ip}` | **Agent:** `v{tool_result_data.get('agent_version', '1.2.0')}`\n"
+                f"- **Monitoring State:** `{m_status}`\n"
+                f"- **Host Firewall:** {fw.get('type', 'Firewall')} ({fw_state})\n"
+                f"- **Open Alerts:** {alerts} unresolved alert(s)\n"
+                f"- **Resource Usage:** CPU: {cpu}%, RAM: {mem}%\n"
+                f"- **Consent Profile:** {len(tool_result_data.get('granted_permissions', []))} granted, {len(tool_result_data.get('withheld_permissions', []))} withheld"
+            )
+            speech = f"Is device ki security status {m_status} hai. Host firewall {fw_state} hai aur {alerts} active alerts hain."
+        else:
+            text = (
+                f"🛡️ **Personal Device Security Status:**\n\n"
+                f"- **Device Identity:** `{dev_name}` ({os_info})\n"
+                f"- **Network Binding:** `{ip}` | **Agent Version:** `v{tool_result_data.get('agent_version', '1.2.0')}`\n"
+                f"- **Monitoring State:** `{m_status}`\n"
+                f"- **Host Firewall:** {fw.get('type', 'Firewall')} ({fw_state})\n"
+                f"- **Active Alerts:** {alerts} security flags requiring attention\n"
+                f"- **System Telemetry:** CPU load: {cpu}%, Memory load: {mem}%\n"
+                f"- **Permission Consent:** {len(tool_result_data.get('granted_permissions', []))} modules authorized, {len(tool_result_data.get('withheld_permissions', []))} withheld by user."
+            )
+            speech = f"Device security status is {m_status}, {user_name}. Host firewall is {fw_state} with {alerts} open security alerts."
+        return text, speech
+
+    if tool_name == "check_suspicious_connections":
+        has_susp = tool_result_data.get("has_suspicious_connections", False)
+        susp_conns = tool_result_data.get("suspicious_connections", [])
+        total = tool_result_data.get("total_connections_observed", 0)
+
+        if not has_susp:
+            if lang == "mr":
+                text = f"✅ **कोणतेही संशयास्पद कनेक्शन आढळले नाही:** तपासलेल्या सर्व {total} नेटवर्क सॉकेट्स सामान्य आणि सुरक्षित आहेत. कोणताही रिव्हर्स शेल किंवा असामान्य पोर्ट सक्रिय नाही."
+                speech = "तुमच्या कॉम्प्युटरवर कोणतेही संशयास्पद कनेक्शन आढळले नाही. सर्व सॉकेट्स सुरक्षित आहेत."
+            elif lang in ["hi", "hinglish"]:
+                text = f"✅ **No Suspicious Connections:** Checked {total} active socket connections. Koi bhi suspicious outbound connection ya reverse shell port detect nahi hua."
+                speech = "Aapke computer par koi suspicious connection nahi hai. All network connections are normal."
+            else:
+                text = f"✅ **All Monitored Sockets Clean:** Inspected {total} active network connections. No abnormal outbound egress or unauthorized listener ports detected."
+                speech = f"No suspicious network connections detected on this machine, {user_name}."
+            return text, speech
+
+        items = []
+        for c in susp_conns[:5]:
+            items.append(f"- ⚠️ **PID {c.get('pid')} ({c.get('process_name')}):** `{c.get('local_ip')}:{c.get('local_port')}` ➔ `{c.get('remote_ip')}:{c.get('remote_port')}` — *{c.get('suspicious_reason')}*")
+        items_str = "\n".join(items)
+
+        if lang == "mr":
+            text = (
+                f"🚨 **संशयास्पद नेटवर्क कनेक्शन आढळले ({len(susp_conns)}):**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *शिफारस: संबंधित प्रक्रियेची तपासणी करा आणि संशयित रिमोट आयपी तात्काळ ब्लॉक करा.*"
+            )
+            speech = f"सावधान. तुमच्या कॉम्प्युटरवर {len(susp_conns)} संशयास्पद कनेक्शन आढळले आहेत. कृपया स्क्रीनवरील तपशील तपासा."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"🚨 **Suspicious Network Connections Detected ({len(susp_conns)}):**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *Action Required: Inspect PID and consider terminating unauthorized processes.*"
+            )
+            speech = f"Alert: Found {len(susp_conns)} suspicious network connection(s) on your computer."
+        else:
+            text = (
+                f"🚨 **Suspicious Endpoint Network Sockets Identified ({len(susp_conns)}):**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *Zero-Trust Isolation: Observed socket metadata has been correlated with heuristic threat rules.*"
+            )
+            speech = f"Warning {user_name}: Found {len(susp_conns)} suspicious network connections requiring investigation."
+        return text, speech
+
+    if tool_name == "get_device_security_alerts":
+        alerts = tool_result_data.get("alerts", [])
+        if not alerts:
+            if lang == "mr":
+                text = "✅ **कोणतेही नवीन सुरक्षा अलर्ट नाहीत:** हे डिव्हाइस पूर्णपणे सुरक्षित आहे."
+                speech = "या डिव्हाइसवर कोणतेही नवीन सुरक्षा अलर्ट नाहीत."
+            elif lang in ["hi", "hinglish"]:
+                text = "✅ **No Open Security Alerts:** Aapke device par koi naya security alert nahi hai."
+                speech = "No new security alerts on this device."
+            else:
+                text = "✅ **No Open Endpoint Security Alerts:** Monitored system behavior is healthy."
+                speech = "No open security alerts on this device."
+            return text, speech
+
+        items = []
+        for a in alerts[:5]:
+            items.append(
+                f"### ⚠️ [{a.get('severity', 'HIGH')}] {a.get('title')}\n"
+                f"- **Category:** `{a.get('category')}` | **Classification:** `{a.get('classification')}`\n"
+                f"- **Description:** {a.get('description')}\n"
+                f"- **Action:** {a.get('suggested_action', 'Investigate process tree')}"
+            )
+        items_str = "\n\n".join(items)
+
+        if lang == "mr":
+            text = f"🚨 **डिव्हाइस सुरक्षा अलर्ट्स ({len(alerts)}):**\n\n{items_str}"
+            speech = f"डिव्हाइसवर {len(alerts)} नवीन सुरक्षा अलर्ट्स आढळले आहेत. स्क्रीनवर तपशील दाखवले आहेत."
+        elif lang in ["hi", "hinglish"]:
+            text = f"🚨 **Endpoint Security Alerts ({len(alerts)}):**\n\n{items_str}"
+            speech = f"Device ke {len(alerts)} new security alerts retrieve kiye gaye hain."
+        else:
+            text = f"🚨 **Active Endpoint Security Alerts ({len(alerts)}):**\n\n{items_str}"
+            speech = f"Retrieved {len(alerts)} open endpoint security alerts, {user_name}."
+        return text, speech
+
+    if tool_name == "get_endpoint_firewall_status":
+        if tool_result_data.get("error"):
+            return f"❌ **Firewall Status Error:** {tool_result_data['error']}", "Could not retrieve firewall status."
+
+        fw_type = tool_result_data.get("firewall_type", "Host Firewall")
+        is_en = tool_result_data.get("is_enabled", False)
+        profiles = tool_result_data.get("profiles", {})
+        inbound = tool_result_data.get("default_inbound", "BLOCK")
+        outbound = tool_result_data.get("default_outbound", "ALLOW")
+        rules = tool_result_data.get("active_rules_count", 0)
+
+        p_str = ", ".join([f"{k}: {v}" for k, v in profiles.items()]) or "Default: Active"
+
+        if lang == "mr":
+            text = (
+                f"🔥 **होस्ट फायरवॉल स्थिती (Host Firewall Status):**\n\n"
+                f"- **फायरवॉल प्रकार:** `{fw_type}`\n"
+                f"- **स्थिती:** `{'सक्रिय (Active)' if is_en else 'निष्क्रिय (Disabled)'}`\n"
+                f"- **प्रोफाइल्स:** {p_str}\n"
+                f"- **डिफॉल्ट इनबाउंड:** `{inbound}` | **डिफॉल्ट आउटबाउंड:** `{outbound}`\n"
+                f"- **सक्रिय नियम:** {rules} नियम लागू केले आहेत."
+            )
+            speech = f"होस्ट फायरवॉल सध्या {'सक्रिय' if is_en else 'निष्क्रिय'} आहे. सर्व प्रोफाइल्स सुरक्षित आहेत."
+        elif lang in ["hi", "hinglish"]:
+            text = (
+                f"🔥 **Host Firewall Status:**\n\n"
+                f"- **Type:** `{fw_type}`\n"
+                f"- **Enforcement:** `{'ACTIVE (Enabled)' if is_en else 'DISABLED'}`\n"
+                f"- **Profile States:** {p_str}\n"
+                f"- **Default Policy:** Inbound `{inbound}`, Outbound `{outbound}`\n"
+                f"- **Active Rules:** {rules} monitored firewall rules"
+            )
+            speech = f"Host firewall status is {'ACTIVE' if is_en else 'DISABLED'}. Inbound default is {inbound}."
+        else:
+            text = (
+                f"🔥 **Host Firewall Configuration & State:**\n\n"
+                f"- **Firewall Engine:** `{fw_type}`\n"
+                f"- **Operational State:** `{'ACTIVE (Enforcing)' if is_en else 'INACTIVE / DISABLED'}`\n"
+                f"- **Profiles Monitored:** {p_str}\n"
+                f"- **Default Policy:** Inbound: `{inbound}` | Outbound: `{outbound}`\n"
+                f"- **Monitored Rules:** {rules} active filter entries"
+            )
+            speech = f"Current firewall status is {'ACTIVE' if is_en else 'DISABLED'}, {user_name}. Default inbound policy is {inbound}."
+        return text, speech
+
+    if tool_name == "pause_endpoint_monitoring":
+        if lang == "mr":
+            text = "⏸️ **मॉनिटरिंग थांबवले:** या डिव्हाइसचे सुरक्षा मॉनिटरिंग तात्पुरते थांबवले आहे. टेलिमेट्री संकलन स्थगित केले आहे."
+            speech = "डिव्हाइसचे सुरक्षा मॉनिटरिंग थांबवण्यात आले आहे."
+        elif lang in ["hi", "hinglish"]:
+            text = "⏸️ **Monitoring Paused:** Device security monitoring has been paused. Telemetry sync is suspended."
+            speech = "Device security monitoring pause kar diya gaya hai."
+        else:
+            text = "⏸️ **Endpoint Monitoring Paused:** Real-time process and socket telemetry has been suspended by user authorization."
+            speech = f"Security monitoring for this device has been paused, {user_name}."
+        return text, speech
+
+    if tool_name == "disconnect_endpoint_device":
+        if lang == "mr":
+            text = "🔌 **डिव्हाइस डिस्कनेक्ट केले:** हे उपकरण डॅशबोर्डवरून डिस्कनेक्ट झाले आहे. स्थानिक मॉनिटरिंग ऑफलाइन मोडमध्ये चालू राहील."
+            speech = "डिव्हाइस डॅशबोर्डवरून डिस्कनेक्ट करण्यात आले आहे."
+        elif lang in ["hi", "hinglish"]:
+            text = "🔌 **Device Disconnected:** Device has been disconnected from central dashboard synchronization."
+            speech = "Device disconnected from the central dashboard."
+        else:
+            text = "🔌 **Device Disconnected:** Successfully disconnected device from dashboard control plane."
+            speech = f"Device has been disconnected from the dashboard, {user_name}."
+        return text, speech
+
+    # Fallback general query (AMOJA AI Female Persona)
+    if is_friendly:
+        if lang == "mr":
+            text = (
+                f"👋 **नमस्कार {user_name}! मी अमोझा (AMOJA AI).**\n\n"
+                f"आपली स्वायत्त सायबर सुरक्षा सहाय्यक सज्ज आहे. सर्व झिरो-ट्रस्ट नियंत्रणे सुरळीत चालू आहेत.\n\n"
+                f"**आपण पुढील गोष्टी विचारू शकता:**\n"
+                f"- *'सुरक्षा सारांश द्या'*\n"
+                f"- *'डिव्हाइस सुरक्षा स्थिती सांगा'*\n"
+                f"- *'नवीन शोधलेली उपकरणे दाखवा'*\n"
+                f"- *'क्रिटिकल अलर्ट्स दाखवा'*"
+            )
+            speech = f"नमस्कार {user_name}! मी अमोझा, आपली सायबर सुरक्षा सहाय्यक. सर्व प्रणाली सुरक्षित आहे. मी कशी मदत करू शकते?"
+        elif lang == "hi":
+            text = (
+                f"👋 **नमस्ते {user_name}! मैं अमोझा (AMOJA AI) हूँ.**\n\n"
+                f"आपकी स्वायत्त साइबर सुरक्षा सहायिका. AgentShield शून्य-विश्वास नियंत्रण कक्ष तैयार है.\n\n"
+                f"**आप मुझसे पूछ सकते हैं:**\n"
+                f"- *'सुरक्षा सारांश बताओ'*\n"
+                f"- *'डिवाइस सुरक्षा स्थिति बताओ'*\n"
+                f"- *'इसके पोर्ट्स दिखाओ'*\n"
+                f"- *'सारे खतरे दिखाओ'*"
+            )
+            speech = f"नमस्ते {user_name}! मैं अमोझा हूँ. सभी सुरक्षा प्रणालियाँ सक्रिय हैं. मैं आपकी क्या सहायता करूँ?"
+        elif lang == "hinglish":
+            text = (
+                f"👋 **Hey {user_name}! I'm AMOJA AI.**\n\n"
+                f"Your autonomous AI cybersecurity defense companion. Sabhi zero-trust defenses active hain.\n\n"
+                f"**You can ask me:**\n"
+                f"- *'Give me the security summary'*\n"
+                f"- *'Show device security status'*\n"
+                f"- *'Check its open ports'*\n"
+                f"- *'Show newly discovered devices'*"
+            )
+            speech = f"Hey {user_name}! AMOJA AI here. All zero-trust controls are active and enforcing. What would you like to check?"
+        else:
+            text = (
+                f"👋 **Hey {user_name}! I'm AMOJA AI.**\n\n"
+                f"Your autonomous female AI cybersecurity companion defending AgentShield. All systems nominal and zero-trust policies are active.\n\n"
+                f"**Quick directives:**\n"
+                f"- *'Give me the security summary'*\n"
+                f"- *'Show device security status'*\n"
+                f"- *'What about its open ports?'*\n"
+                f"- *'Show newly discovered devices'*\n"
+                f"- *'Show all critical threats'*"
+            )
+            speech = f"Hey {user_name}! I'm AMOJA. All defense systems are active and running smoothly. What would you like to inspect across the platform?"
     else:
-        text = f"At your service, {user_name}. AgentShield Zero-Trust Control Plane is standing by. You can ask for security summaries, review prompt injections, investigate incidents, or inspect audit logs."
-        speech = f"At your service, {user_name}. All defense systems are operational. How may I assist your investigation?"
+        # Professional Security Mode
+        if lang == "mr":
+            text = f"🛡️ **AgentShield नियंत्रण कक्ष (AMOJA AI):**\n\n- ऑपरेटर: `{user_name}`\n- धोरण स्थिती: **झिरो-ट्रस्ट अंमलबजावणी सक्रिय**\n- उपलब्ध साधने: 18 अनुमोदित सायबर सुरक्षा साधने सज्ज."
+            speech = f"AgentShield नियंत्रण कक्ष सज्ज, {user_name}. झिरो-ट्रस्ट सक्रिय. पुढील आदेश द्या."
+        elif lang == "hi":
+            text = f"🛡️ **AgentShield नियंत्रण कक्ष (AMOJA AI):**\n\n- ऑपरेटर: `{user_name}`\n- सुरक्षा स्थिति: **शून्य-विश्वास प्रवर्तन सक्रिय**\n- उपलब्ध टूल्स: 18 स्वीकृत टूल्स ऑनलाइन."
+            speech = f"AgentShield नियंत्रण कक्ष तैयार. शून्य-विश्वास सक्रिय. अगला निर्देश दें."
+        elif lang == "hinglish":
+            text = f"🛡️ **AgentShield Zero-Trust Control Plane:**\n\n- Operator: `{user_name}`\n- Posture: **ENFORCING**\n- Registry: 18 authorized operational tools online."
+            speech = f"Zero-Trust control plane active. Standing by for operational instructions."
+        else:
+            text = f"🛡️ **AgentShield Zero-Trust Control Plane:**\n\n- Operator: `{user_name}`\n- Enforcement Posture: **ENFORCING**\n- Tool Registry: 18 authorized security tools ready."
+            speech = f"Zero-Trust control plane active, {user_name}. Standing by for operational instructions."
 
     return text, speech
 
@@ -572,12 +1026,14 @@ async def process_jarvis_turn(
             audio_base64=audio_b64
         )
 
-    # 2. Update context if provided
+    # 2. Update context if provided and retrieve multi-turn session history
     current_context = request.context or JarvisSecurityContext()
-    update_session_context(session_id, user.get("username", "admin"), current_context)
+    u_name = user.get("username", "admin")
+    update_session_context(session_id, u_name, current_context)
+    session_context = get_recent_turn_context(session_id, u_name)
 
-    # 3. Match user intent to supported tools and voice commands
-    tool_name, tool_args, nav_target = match_command_intent(request.message, current_context)
+    # 3. Match user intent to supported tools and voice commands with follow-up awareness
+    tool_name, tool_args, nav_target = match_command_intent(request.message, current_context, session_context)
 
     # Handle explicit "stop listening" command
     if tool_name == "STOP_LISTENING":
@@ -612,6 +1068,29 @@ async def process_jarvis_turn(
                 state=JarvisState.ERROR,
                 created_at=now_iso()
             )
+
+        # Layer 3: AI Agent Security Firewall Policy Enforcement Gateway
+        gateway_eval = AIAgentSecurityGateway.evaluate_tool_call(
+            tool_name=tool_name,
+            arguments=tool_args,
+            user=user,
+            agent_id="agent-jarvis-orchestrator",
+            prompt_context=request.message
+        )
+        if gateway_eval.decision == "BLOCK":
+            block_msg = f"🛡️ **AI Agent Firewall Blocked Tool:** {gateway_eval.reason}"
+            block_speech = "Action blocked by AI Agent Security Firewall policy."
+            return JarvisMessageResponse(
+                session_id=session_id,
+                message=block_msg,
+                speech_text=block_speech,
+                language=user_lang,
+                state=JarvisState.ERROR,
+                created_at=now_iso()
+            )
+
+        # Use schema-validated sanitized arguments
+        tool_args = gateway_eval.sanitized_arguments
 
         # Dispatch tool
         t_start = datetime.now(timezone.utc)
@@ -662,6 +1141,28 @@ async def process_jarvis_turn(
             execution_time_ms=t_dur
         ))
 
+        # Update session memory context with executed tool & referenced entities for future follow-up turns
+        if tool_name in ["get_device_security_status", "check_suspicious_connections", "get_endpoint_firewall_status", "pause_endpoint_monitoring", "disconnect_endpoint_device"]:
+            set_session_context_field(session_id, u_name, "last_topic", "endpoint")
+            set_session_context_field(session_id, u_name, "last_tool", tool_name)
+            if tool_args.get("device_id"):
+                set_session_context_field(session_id, u_name, "selected_device_id", tool_args["device_id"])
+        elif tool_name in ["get_network_monitoring_status", "get_network_discovered_devices", "get_network_security_alerts", "start_network_monitoring", "stop_network_monitoring", "trigger_network_scan_now"]:
+            set_session_context_field(session_id, u_name, "last_topic", "network")
+            set_session_context_field(session_id, u_name, "last_tool", tool_name)
+        elif tool_name in ["get_alerts_and_incidents", "get_incident_details", "generate_incident_report_draft"]:
+            set_session_context_field(session_id, u_name, "last_topic", "incident")
+            set_session_context_field(session_id, u_name, "last_tool", tool_name)
+            if tool_args.get("incident_identifier") or tool_args.get("incident_id"):
+                set_session_context_field(session_id, u_name, "selected_incident_id", str(tool_args.get("incident_identifier") or tool_args.get("incident_id")))
+        elif tool_name in ["list_agents", "get_agent_details", "explain_risk_trust_scores", "inspect_permissions", "prepare_kill_switch"]:
+            set_session_context_field(session_id, u_name, "last_topic", "agent")
+            set_session_context_field(session_id, u_name, "last_tool", tool_name)
+            if tool_args.get("agent_id"):
+                set_session_context_field(session_id, u_name, "selected_agent_id", tool_args["agent_id"])
+
+        personality_mode = getattr(request, "personality_mode", "friendly") or "friendly"
+
         # Synthesize response
         raw_text, speech_text = synthesize_response_nlp(
             user_prompt=request.message,
@@ -669,9 +1170,11 @@ async def process_jarvis_turn(
             tool_name=tool_name,
             tool_result_data=result_data,
             action_req=action_req,
-            user=user
+            user=user,
+            personality_mode=personality_mode
         )
     else:
+        personality_mode = getattr(request, "personality_mode", "friendly") or "friendly"
         # If no tool matched, generate helpful assistant response
         raw_text, speech_text = synthesize_response_nlp(
             user_prompt=request.message,
@@ -679,7 +1182,8 @@ async def process_jarvis_turn(
             tool_name=None,
             tool_result_data=None,
             action_req=None,
-            user=user
+            user=user,
+            personality_mode=personality_mode
         )
 
     # Sanitize output (ensure no secrets leaked in output)
@@ -723,7 +1227,8 @@ async def process_jarvis_turn(
         created_at=now_iso(),
         audio_confidence=0.95 if request.is_voice else None,
         is_local_mode=is_local_mode,
-        audio_base64=audio_b64
+        audio_base64=audio_b64,
+        personality_mode=personality_mode
     )
 
 def execute_confirmed_action(

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   Send, Bot, User as UserIcon, ShieldAlert, CheckCircle2, XCircle,
   Terminal, Globe, Trash2, Mic, AlertCircle, ChevronDown, ChevronUp, Copy, Check,
-  Volume2, Play, Pause
+  Volume2, Play, Pause, Download
 } from "lucide-react";
 import { JarvisMessage, JarvisLanguage, JarvisConfirmationRequest } from "../../types";
 
@@ -18,6 +18,8 @@ interface Props {
   transcription?: string;
   errorMessage?: string;
   onPlayMessageAudio?: (m: JarvisMessage) => void;
+  personalityMode?: "friendly" | "security";
+  onTogglePersonalityMode?: (mode: "friendly" | "security") => void;
 }
 
 export const JarvisChatPanel: React.FC<Props> = ({
@@ -30,7 +32,9 @@ export const JarvisChatPanel: React.FC<Props> = ({
   isProcessing,
   transcription,
   errorMessage,
-  onPlayMessageAudio
+  onPlayMessageAudio,
+  personalityMode = "friendly",
+  onTogglePersonalityMode
 }) => {
   const [inputText, setInputText] = useState("");
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
@@ -56,18 +60,39 @@ export const JarvisChatPanel: React.FC<Props> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleExportTranscript = () => {
+    if (messages.length === 0) return;
+    const header = `# AgentShield — AMOJA AI Conversation Transcript\nExported: ${new Date().toISOString()}\nZero-Trust Status: ENFORCING\nTotal Turns: ${messages.length}\n\n---\n\n`;
+    const body = messages.map(m => {
+      const role = m.role === "assistant" ? "AMOJA AI (Autonomous Defense)" : "Operator";
+      const time = m.created_at ? new Date(m.created_at).toLocaleTimeString() : "";
+      const tools = m.tool_calls && m.tool_calls.length > 0 ? `\n*Tools Executed:* ${m.tool_calls.map(tc => `\`${tc.tool_name}\``).join(", ")}` : "";
+      return `### [${time}] ${role}\n${m.content}${tools}\n`;
+    }).join("\n---\n\n");
+    const blob = new Blob([header + body], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `amoja_conversation_transcript_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-")}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const toggleToolExpand = (key: string) => {
     setExpandedTools(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const quickPrompts = [
     { label: "Security Summary", text: "Give me the security summary" },
-    { label: "सगळे धोके दाखव (मराठी)", text: "Jarvis, mala sagle critical threats dakhav" },
-    { label: "Highest Risk Agent? (मराठी)", text: "Kontya AI agent cha risk score saglyat jast aahe?" },
-    { label: "सारे खतरे दिखाओ (हिन्दी)", text: "Jarvis, mujhe saare critical threats dikhao" },
-    { label: "Prompt Injections (Hinglish)", text: "Jarvis, latest prompt injection attacks check karo aur simple language mein samjhao" },
-    { label: "Attack Graph", text: "Show the attack path" },
-    { label: "Audit Ledger", text: "Open the audit logs" }
+    { label: "Device Security", text: "Show device security status" },
+    { label: "What about its connections?", text: "What about its open ports?" },
+    { label: "सगळे धोके दाखव (मराठी)", text: "Amoja, mala sagle critical threats dakhav" },
+    { label: "याच्याबद्दल सांगा (मराठी)", text: "याच्याबद्दल अधिक सांगा" },
+    { label: "सारे खतरे दिखाओ (हिन्दी)", text: "Amoja, mujhe saare critical threats dikhao" },
+    { label: "इसके बारे में बताओ (हिन्दी)", text: "इसके बारे में और बताओ" },
+    { label: "Prompt Injections (Hinglish)", text: "Amoja, latest prompt injection attacks check karo" },
+    { label: "Network Monitoring", text: "Show network monitoring status" },
+    { label: "Trigger Scan Now", text: "Trigger a scan now" }
   ];
 
   return (
@@ -75,11 +100,40 @@ export const JarvisChatPanel: React.FC<Props> = ({
       {/* Top Header Toolbar */}
       <div className="chat-panel-header">
         <div className="chat-branding">
-          <Bot size={16} className="jarvis-icon-glow" />
-          <span>JARVIS CONVERSATIONAL DEFENSE</span>
+          <Bot size={16} className="jarvis-icon-glow" style={{ color: "#76b900" }} />
+          <span>AMOJA AI // DGX CONVERSATIONAL CORE</span>
+          <span className="female-voice-tag" style={{ fontSize: "10px", padding: "2px 7px", background: "rgba(118, 185, 0, 0.18)", color: "#76b900", borderRadius: "4px", marginLeft: "8px", border: "1px solid rgba(118, 185, 0, 0.4)", fontWeight: 700, letterSpacing: "0.5px" }}>
+            FEMALE VOICE
+          </span>
         </div>
 
         <div className="chat-toolbar-actions">
+          {/* Personality Mode Toggle: Friendly vs Security */}
+          {onTogglePersonalityMode && (
+            <button
+              type="button"
+              className={`btn-chat-tool personality-toggle-btn`}
+              onClick={() => onTogglePersonalityMode(personalityMode === "friendly" ? "security" : "friendly")}
+              title={`Switch Personality (Current: ${personalityMode === "friendly" ? "Friendly Companion" : "SOC Security Analyst"})`}
+              aria-label="Toggle Assistant Personality"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                fontSize: "11px",
+                padding: "3px 8px",
+                borderRadius: "4px",
+                border: "1px solid rgba(118, 185, 0, 0.35)",
+                background: personalityMode === "friendly" ? "rgba(118, 185, 0, 0.18)" : "rgba(16, 185, 129, 0.18)",
+                color: personalityMode === "friendly" ? "#76b900" : "#00ff88",
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              <span>{personalityMode === "friendly" ? "🌱 FRIENDLY" : "🛡️ SECURITY"}</span>
+            </button>
+          )}
+
           {/* Language Selector */}
           <div className="lang-picker-group">
             <Globe size={14} />
@@ -91,12 +145,25 @@ export const JarvisChatPanel: React.FC<Props> = ({
               aria-label="Conversation language"
             >
               <option value="auto">Auto-Detect</option>
-              <option value="en">English</option>
-              <option value="hi">हिन्दी (Hindi)</option>
-              <option value="mr">मराठी (Marathi)</option>
-              <option value="hinglish">Hinglish</option>
+              <option value="en">English (AMOJA)</option>
+              <option value="hi">हिन्दी - Hindi (AMOJA)</option>
+              <option value="mr">मराठी - Marathi (AMOJA)</option>
+              <option value="hinglish">Hinglish (AMOJA)</option>
             </select>
           </div>
+
+          {/* Export Transcript */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              className="btn-chat-tool"
+              onClick={handleExportTranscript}
+              title="Export Full Conversation Transcript (Markdown)"
+              aria-label="Export conversation transcript"
+            >
+              <Download size={14} />
+            </button>
+          )}
 
           {/* Clear History */}
           <button
@@ -118,11 +185,11 @@ export const JarvisChatPanel: React.FC<Props> = ({
             <div className="empty-radar-icon">
               <Bot size={36} />
             </div>
-            <h4>Autonomous AI Defense Assistant</h4>
-            <p>Speak or enter commands to inspect real-time SOC telemetry, verify Zero-Trust policies, or investigate active incidents.</p>
+            <h4>AMOJA AI Autonomous Cybersecurity Defense</h4>
+            <p>Speak naturally with continuous hands-free dialogue, interruption barge-in, and multi-turn context across English, Hindi, Marathi, and Hinglish.</p>
 
             <div className="quick-suggestions-box">
-              <span className="suggestions-title">RECOMMENDED VOICE DIRECTIVES:</span>
+              <span className="suggestions-title">// RECOMMENDED MULTI-TURN DIRECTIVES //</span>
               <div className="quick-chip-grid">
                 {quickPrompts.map((q) => (
                   <button
@@ -151,12 +218,12 @@ export const JarvisChatPanel: React.FC<Props> = ({
 
               <div className="message-bubble-wrapper">
                 <div className="message-meta-header">
-                  <strong>{isAssistant ? "J.A.R.V.I.S." : "Operator"}</strong>
+                  <strong>{isAssistant ? "AMOJA AI" : "Operator"}</strong>
                   <span className="timestamp">{m.created_at ? new Date(m.created_at).toLocaleTimeString() : ""}</span>
                   {m.language && (
                     <span className="msg-lang-badge">{m.language.toUpperCase()}</span>
                   )}
-                  {m.speech_text && onPlayMessageAudio && (
+                  {isAssistant && onPlayMessageAudio && (
                     <button
                       type="button"
                       className="voice-tag voice-play-btn"

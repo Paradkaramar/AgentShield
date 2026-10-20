@@ -1,6 +1,5 @@
-// frontend/src/components/jarvis/JarvisModalDrawer.tsx
 import React, { useState, useEffect, useCallback } from "react";
-import { X, Maximize2, Minimize2, Cpu, Volume2, Shield } from "lucide-react";
+import { X, Maximize2, Minimize2, Cpu, Volume2, Shield, Radio, Square } from "lucide-react";
 import { JarvisOrb } from "./JarvisOrb";
 import { JarvisWaveform } from "./JarvisWaveform";
 import { JarvisMicButton } from "./JarvisMicButton";
@@ -36,6 +35,12 @@ export const JarvisModalDrawer: React.FC<Props> = ({
   const [jarvisState, setJarvisState] = useState<JarvisState>("IDLE");
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isContinuousVoice, setIsContinuousVoice] = useState(false);
+  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
+  const [micPermission, setMicPermission] = useState<"granted" | "denied" | "prompt" | "unsupported">("prompt");
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [messages, setMessages] = useState<JarvisMessage[]>([]);
   const [transcription, setTranscription] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState<JarvisLanguage>("auto");
@@ -46,16 +51,25 @@ export const JarvisModalDrawer: React.FC<Props> = ({
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [preferences, setPreferences] = useState<JarvisPreferences | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [personalityMode, setPersonalityMode] = useState<"friendly" | "security">("friendly");
 
-  // Load preferences and briefing on open
+  // Load preferences, permissions, and briefing on open
   useEffect(() => {
     if (!isOpen) return;
+
+    jarvisVoice.checkMicrophonePermission().then(status => {
+      setMicPermission(status);
+    });
 
     getJarvisPreferences()
       .then(prefs => {
         setPreferences(prefs);
         setIsMuted(!prefs.voice_enabled);
+        setIsMicMuted(Boolean(prefs.mic_muted));
+        setIsWakeWordEnabled(Boolean(prefs.wake_word_enabled));
         setSelectedLanguage(prefs.default_language || "auto");
+        jarvisVoice.setMicrophoneMuted(Boolean(prefs.mic_muted));
+        jarvisVoice.setWakeWordEnabled(Boolean(prefs.wake_word_enabled));
         jarvisVoice.setSpeechSettings(
           prefs.speech_rate || 1.05,
           prefs.speech_pitch || 1.0,
@@ -68,18 +82,54 @@ export const JarvisModalDrawer: React.FC<Props> = ({
     loadBriefing();
   }, [isOpen]);
 
-  // Keyboard shortcut listener: Escape to close
+  // Recording elapsed timer effect
+  useEffect(() => {
+    if (!isListening) {
+      setRecordingDuration(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setRecordingDuration(jarvisVoice.getRecordingDurationSeconds());
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  // Keyboard shortcut listener: Escape to close, Space to Push-to-Talk
   useEffect(() => {
     if (!isOpen) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         jarvisVoice.stopListening();
         jarvisVoice.stopSpeaking();
         onClose();
+      } else if (e.code === "Space" && !e.repeat) {
+        const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+        if (activeTag !== "input" && activeTag !== "textarea") {
+          e.preventDefault();
+          setIsPushToTalkActive(true);
+          jarvisVoice.startPushToTalk();
+        }
       }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+        if (activeTag !== "input" && activeTag !== "textarea") {
+          e.preventDefault();
+          setIsPushToTalkActive(false);
+          jarvisVoice.stopPushToTalk();
+        }
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [isOpen, onClose]);
 
   // Voice engine callbacks
@@ -95,6 +145,15 @@ export const JarvisModalDrawer: React.FC<Props> = ({
         handleUserMessage(text.trim(), true);
         setTranscription("");
       }
+    };
+
+    jarvisVoice.onWakeWordDetected = (phrase) => {
+      setErrorMessage(`Wake word detected: "${phrase}". AMOJA listening...`);
+      setTimeout(() => setErrorMessage(""), 3500);
+    };
+
+    jarvisVoice.onPermissionStatusChange = (status) => {
+      setMicPermission(status);
     };
 
     jarvisVoice.onError = (err) => {
@@ -145,6 +204,7 @@ export const JarvisModalDrawer: React.FC<Props> = ({
         sessionId,
         language: selectedLanguage,
         isVoice,
+        personalityMode,
         context
       });
 
@@ -172,7 +232,11 @@ export const JarvisModalDrawer: React.FC<Props> = ({
       // Speak response if voice output is enabled
       if (res.speech_text && !isMuted) {
         setJarvisState("SPEAKING");
-        await jarvisVoice.speak(res.speech_text);
+        if (jarvisVoice.isSpeechSynthesisSupported()) {
+          await jarvisVoice.speak(res.speech_text);
+        } else if (res.audio_base64) {
+          await jarvisVoice.playLocalAudioBase64(res.audio_base64);
+        }
       } else {
         setJarvisState("IDLE");
       }
@@ -244,12 +308,62 @@ export const JarvisModalDrawer: React.FC<Props> = ({
     }
   };
 
+  const handleToggleMicMute = () => {
+    const nextVal = !isMicMuted;
+    setIsMicMuted(nextVal);
+    jarvisVoice.setMicrophoneMuted(nextVal);
+    if (preferences) {
+      const updated = { ...preferences, mic_muted: nextVal };
+      setPreferences(updated);
+      saveJarvisPreferences(updated).catch(() => {});
+    }
+  };
+
+  const handleToggleWakeWord = () => {
+    const nextVal = !isWakeWordEnabled;
+    setIsWakeWordEnabled(nextVal);
+    jarvisVoice.setWakeWordEnabled(nextVal);
+    if (preferences) {
+      const updated = { ...preferences, wake_word_enabled: nextVal };
+      setPreferences(updated);
+      saveJarvisPreferences(updated).catch(() => {});
+    }
+  };
+
+  const handleStartPushToTalk = () => {
+    setIsPushToTalkActive(true);
+    jarvisVoice.startPushToTalk();
+  };
+
+  const handleStopPushToTalk = () => {
+    setIsPushToTalkActive(false);
+    jarvisVoice.stopPushToTalk();
+  };
+
+  const handleRequestMicPermission = async () => {
+    const granted = await jarvisVoice.requestMicrophonePermission();
+    setMicPermission(granted ? "granted" : "denied");
+  };
+
   const handleStopSpeaking = () => {
     jarvisVoice.stopSpeaking();
   };
 
+  const handleToggleContinuousVoice = () => {
+    const nextVal = !isContinuousVoice;
+    setIsContinuousVoice(nextVal);
+    jarvisVoice.setContinuousMode(nextVal);
+    if (nextVal && jarvisState === "IDLE") {
+      jarvisVoice.startListening();
+    }
+  };
+
+  const handleInterruptPlayback = () => {
+    jarvisVoice.interruptPlayback();
+  };
+
   const handleClearHistory = async () => {
-    if (!window.confirm("Clear current conversation history with JARVIS?")) return;
+    if (!window.confirm("Clear current conversation history with AMOJA AI?")) return;
     if (sessionId) {
       try {
         await clearJarvisHistory(sessionId);
@@ -270,12 +384,90 @@ export const JarvisModalDrawer: React.FC<Props> = ({
               <Cpu size={18} />
             </div>
             <div>
-              <h3>JARVIS AI SECURITY ASSISTANT</h3>
-              <small className="hud-subheading">Cinematic Zero-Trust Autonomous Control</small>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <h3>AMOJA AI SECURITY ASSISTANT</h3>
+                <span style={{ fontSize: "10px", padding: "2px 6px", background: "rgba(16, 185, 129, 0.2)", color: "#10b981", borderRadius: "10px", border: "1px solid rgba(16, 185, 129, 0.4)", fontWeight: 600 }}>
+                  FEMALE VOICE
+                </span>
+              </div>
+              <small className="hud-subheading">Continuous Two-Way Voice • Push-to-Talk • "Hey Amoja" Wake-Word • Zero-Trust</small>
             </div>
           </div>
 
-          <div className="header-window-controls">
+          <div className="header-window-controls" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {/* Optional "Hey Amoja" Wake-Word Header Toggle */}
+            <button
+              type="button"
+              className="btn-window-ctrl"
+              onClick={handleToggleWakeWord}
+              title={isWakeWordEnabled ? "Wake word active: say 'Hey Amoja' to command assistant" : "Enable 'Hey Amoja' wake-word activation"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "4px 8px",
+                borderRadius: "4px",
+                background: isWakeWordEnabled ? "rgba(56, 189, 248, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                border: isWakeWordEnabled ? "1px solid #38bdf8" : "1px solid rgba(255, 255, 255, 0.15)",
+                color: isWakeWordEnabled ? "#38bdf8" : "#cbd5e1",
+                fontSize: "11px",
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              <span>{isWakeWordEnabled ? "WAKE: HEY AMOJA" : "WAKE: OFF"}</span>
+            </button>
+
+            {/* Hands-Free Continuous Voice Toggle */}
+            <button
+              type="button"
+              className="btn-window-ctrl"
+              onClick={handleToggleContinuousVoice}
+              title={isContinuousVoice ? "Hands-free continuous conversation active. Click to disable." : "Enable hands-free continuous two-way conversation mode"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "4px 8px",
+                borderRadius: "4px",
+                background: isContinuousVoice ? "rgba(16, 185, 129, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                border: isContinuousVoice ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.15)",
+                color: isContinuousVoice ? "#10b981" : "#cbd5e1",
+                fontSize: "11px",
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              <Radio size={13} style={{ color: isContinuousVoice ? "#10b981" : "#94a3b8" }} />
+              <span>{isContinuousVoice ? "LIVE VOICE ON" : "HANDS-FREE"}</span>
+            </button>
+
+            {/* Barge-In / Interrupt Button when AMOJA is speaking */}
+            {jarvisState === "SPEAKING" && (
+              <button
+                type="button"
+                className="btn-window-ctrl"
+                onClick={handleInterruptPlayback}
+                title="Barge-in / Interrupt AMOJA speaking immediately"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  background: "rgba(239, 68, 68, 0.25)",
+                  border: "1px solid #ef4444",
+                  color: "#ef4444",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                <Square size={11} fill="currentColor" />
+                <span>INTERRUPT</span>
+              </button>
+            )}
+
             <button
               type="button"
               className="btn-window-ctrl"
@@ -330,10 +522,20 @@ export const JarvisModalDrawer: React.FC<Props> = ({
               state={jarvisState}
               isListening={isListening}
               isMuted={isMuted}
+              isMicMuted={isMicMuted}
               isSpeechSupported={jarvisVoice.isSpeechRecognitionSupported()}
+              isWakeWordEnabled={isWakeWordEnabled}
+              isPushToTalkActive={isPushToTalkActive}
+              micPermissionStatus={micPermission}
+              recordingDurationSeconds={recordingDuration}
               onToggleListen={handleToggleListen}
               onStopListening={handleStopListening}
               onToggleMute={handleToggleMute}
+              onToggleMicMute={handleToggleMicMute}
+              onToggleWakeWord={handleToggleWakeWord}
+              onStartPushToTalk={handleStartPushToTalk}
+              onStopPushToTalk={handleStopPushToTalk}
+              onRequestMicPermission={handleRequestMicPermission}
               onStopSpeaking={handleStopSpeaking}
             />
           </div>
@@ -353,6 +555,8 @@ export const JarvisModalDrawer: React.FC<Props> = ({
               isProcessing={isProcessing}
               transcription={transcription}
               errorMessage={errorMessage}
+              personalityMode={personalityMode}
+              onTogglePersonalityMode={setPersonalityMode}
             />
           </div>
         </div>

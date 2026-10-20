@@ -148,6 +148,95 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "reason": {"type": "string", "description": "Justification for decision"}
         },
         "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "get_network_monitoring_status": {
+        "description": "Retrieve continuous network monitoring status, approved scope, scan interval, last/next scan time, and emergency stop status.",
+        "category": "read",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "get_network_discovered_devices": {
+        "description": "Retrieve reachable and newly discovered network devices and hosts within authorized IP ranges, distinguishing baselined vs newly found.",
+        "category": "read",
+        "parameters": {
+            "baseline_only": {"type": "boolean", "description": "Filter by baseline status", "default": False}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "get_network_security_alerts": {
+        "description": "Retrieve network security alerts and suspicious network activity, clearly separating observed facts from suspected threats.",
+        "category": "read",
+        "parameters": {
+            "limit": {"type": "integer", "description": "Maximum number of alerts to retrieve", "default": 10}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "start_network_monitoring": {
+        "description": "Start continuous network monitoring on authorized approved scopes. Never expands scope.",
+        "category": "write",
+        "parameters": {},
+        "allowed_roles": ["admin", "operator"]
+    },
+    "stop_network_monitoring": {
+        "description": "Stop current network monitoring jobs and disable continuous scanning.",
+        "category": "write",
+        "parameters": {},
+        "allowed_roles": ["admin"]
+    },
+    "trigger_network_scan_now": {
+        "description": "Trigger an immediate scan sweep of approved network scopes. Never expands scope.",
+        "category": "write",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "get_device_security_status": {
+        "description": "Retrieve security monitoring status, health, OS, firewall, and active consent for the enrolled personal endpoint device.",
+        "category": "read",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "check_suspicious_connections": {
+        "description": "Inspect active network socket connections on this computer for anomalous egress, reverse shells, or non-standard ports.",
+        "category": "read",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "get_device_security_alerts": {
+        "description": "Retrieve open security alerts and suspicious behavioral flags detected on enrolled personal devices.",
+        "category": "read",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""},
+            "limit": {"type": "integer", "description": "Maximum alerts to return", "default": 10}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "get_endpoint_firewall_status": {
+        "description": "Inspect host firewall configuration (Windows Defender Firewall or Linux UFW), profile states, and default policies.",
+        "category": "read",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "pause_endpoint_monitoring": {
+        "description": "Pause security telemetry collection and background monitoring for the personal device.",
+        "category": "write",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
+        },
+        "allowed_roles": ["admin", "operator"]
+    },
+    "disconnect_endpoint_device": {
+        "description": "Disconnect this device from the central AgentShield dashboard synchronization.",
+        "category": "write",
+        "parameters": {
+            "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
+        },
+        "allowed_roles": ["admin", "operator"]
     }
 }
 
@@ -518,7 +607,7 @@ def execute_generate_incident_report_draft(db: sqlite3.Connection, params: Dict[
 def execute_navigate_frontend(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
     target_page = params.get("target_page", "Overview")
     valid_pages = [
-        "Overview", "Real-Time Monitor", "Agents", "Agent Lab", "Approvals",
+        "Overview", "Real-Time Monitor", "Network Monitoring", "Agents", "Agent Lab", "Approvals",
         "Incidents & Alerts", "Prompt Injection", "DLP Policy & Events",
         "Canary Tokens", "Shadow AI Discovery", "Attack Graph", "Delegation Graph",
         "Red-Team Simulation", "Predictive Risk", "Digital Twin Replay",
@@ -541,6 +630,110 @@ def execute_navigate_frontend(db: sqlite3.Connection, params: Dict[str, Any]) ->
         "message": f"Navigating to '{matched}' page."
     }
 
+def execute_get_network_monitoring_status(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    from ..services.network_monitor import network_monitoring_service
+    return network_monitoring_service.get_monitoring_status()
+
+def execute_get_network_discovered_devices(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    baseline_only = params.get("baseline_only", False)
+    query = "SELECT ip_address, hostname, mac_address, status, in_baseline, latency_ms, first_seen, last_seen FROM network_assets WHERE 1=1"
+    args = []
+    if baseline_only:
+        query += " AND in_baseline = 1"
+    query += " ORDER BY in_baseline ASC, last_seen DESC LIMIT 20"
+    
+    rows = [dict(r) for r in db.execute(query, tuple(args)).fetchall()]
+    for r in rows:
+        srv_rows = db.execute("SELECT port, protocol, service_name, banner FROM service_observations WHERE ip_address = ? AND state = 'OPEN'", (r["ip_address"],)).fetchall()
+        r["open_ports"] = [dict(s) for s in srv_rows]
+
+    new_devices = [d for d in rows if not d.get("in_baseline")]
+    baselined_devices = [d for d in rows if d.get("in_baseline")]
+
+    return {
+        "total_returned": len(rows),
+        "newly_discovered_count": len(new_devices),
+        "baselined_count": len(baselined_devices),
+        "newly_discovered_devices": new_devices,
+        "baselined_devices": baselined_devices,
+        "devices": rows
+    }
+
+def execute_get_network_security_alerts(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    limit = int(params.get("limit", 10))
+    rows = [dict(r) for r in db.execute("""
+        SELECT id, scan_job_id, alert_type, severity, title, observed_fact,
+               suspected_threat, target_ip, target_port, evidence_json, status, created_at
+        FROM network_security_alerts
+        ORDER BY id DESC LIMIT ?
+    """, (limit,)).fetchall()]
+
+    for r in rows:
+        try:
+            r["evidence"] = json.loads(r.get("evidence_json") or "{}")
+        except Exception:
+            r["evidence"] = {}
+
+    return {
+        "total_alerts": len(rows),
+        "alerts": rows,
+        "fact_threat_distinction": "All records strictly partition verified empirical probe observations from hypothesized adversarial threats."
+    }
+
+def execute_start_network_monitoring(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    from ..services.network_monitor import network_monitoring_service
+    now = now_iso()
+    db.execute("UPDATE network_monitoring_config SET service_enabled = 1, is_paused = 0, updated_at = ?", (now,))
+    network_monitoring_service.start_background_service()
+    
+    scopes = [r[0] for r in db.execute("SELECT cidr_or_ip FROM approved_scan_scopes WHERE is_approved = 1").fetchall()]
+    return {
+        "status": "STARTED",
+        "service_enabled": True,
+        "message": f"Continuous network monitoring initiated for approved scopes: {', '.join(scopes)}.",
+        "approved_scopes": scopes,
+        "scope_guarantee": "Strict zero-trust confinement: scanner will only probe authorized assets within approved CIDRs."
+    }
+
+def execute_stop_network_monitoring(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    now = now_iso()
+    db.execute("UPDATE network_monitoring_config SET service_enabled = 0, updated_at = ?", (now,))
+    return {
+        "status": "STOPPED",
+        "service_enabled": False,
+        "message": "Continuous network monitoring service has been deactivated."
+    }
+
+def execute_trigger_network_scan_now(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    from ..services.network_monitor import network_monitoring_service
+    scopes = [r[0] for r in db.execute("SELECT cidr_or_ip FROM approved_scan_scopes WHERE is_approved = 1").fetchall()]
+    
+    # If the user attempted to pass an explicit target IP outside approved scopes, block it immediately
+    target_requested = params.get("target_ip")
+    if target_requested:
+        from ..engines.network_scanner import validate_ip_in_approved_scope
+        excls = [r[0] for r in db.execute("SELECT ip_address FROM network_exclusions").fetchall()]
+        valid, reason = validate_ip_in_approved_scope(target_requested, scopes, excls)
+        if not valid:
+            return {
+                "error": f"Scope Violation: {reason}. AgentShield Zero-Trust policy strictly blocks scanning arbitrary external addresses."
+            }
+
+    # Trigger scan cycle asynchronously
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(network_monitoring_service.execute_scan_cycle(triggered_by="JARVIS"))
+    except Exception:
+        pass
+
+    return {
+        "status": "SCAN_DISPATCHED",
+        "message": f"Authorized network scan sweep dispatched across {len(scopes)} approved scope(s).",
+        "approved_scopes": scopes
+    }
+
 def execute_prepare_kill_switch(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
     agent_id = str(params.get("agent_id", "")).strip()
     reason = params.get("reason", "Operator activated emergency quarantine via JARVIS")
@@ -550,7 +743,7 @@ def execute_prepare_kill_switch(db: sqlite3.Connection, params: Dict[str, Any]) 
 
     agent_d = dict(agent)
     action_id = f"act-{uuid.uuid4().hex[:12]}"
-    idempotency_key = f"idemp-kill-{agent_d['id']}-{int(datetime.now(timezone.utc).timestamp())}"
+    idempotency_key = f"idemp-kill-{agent_d['id']}-{int(datetime.now(timezone.utc).timestamp() * 1000)}-{uuid.uuid4().hex[:6]}"
 
     explanation = (
         f"You have requested to ACTIVATE THE EMERGENCY KILL SWITCH for {agent_d['name']} ({agent_d['id']}). "
@@ -580,7 +773,7 @@ def execute_prepare_approval_decision(db: sqlite3.Connection, params: Dict[str, 
         return {"error": f"Approval request #{approval_id} not found"}
 
     action_id = f"act-{uuid.uuid4().hex[:12]}"
-    idempotency_key = f"idemp-appr-{approval_id}-{decision}-{int(datetime.now(timezone.utc).timestamp())}"
+    idempotency_key = f"idemp-appr-{approval_id}-{decision}-{int(datetime.now(timezone.utc).timestamp() * 1000)}-{uuid.uuid4().hex[:6]}"
     
     explanation = (
         f"Confirm decision to {decision} approval request #{approval_id} for agent {approval['agent_id']} "
@@ -598,6 +791,174 @@ def execute_prepare_approval_decision(db: sqlite3.Connection, params: Dict[str, 
         "idempotency_key": idempotency_key,
         "decision": decision,
         "reason": reason
+    }
+
+def _resolve_target_device_id(db: sqlite3.Connection, device_id: Optional[str] = None) -> Optional[str]:
+    """Helper to pick provided device_id or the most recently active enrolled device."""
+    if device_id and device_id.strip():
+        return device_id.strip()
+    row = db.execute("SELECT id FROM enrolled_devices ORDER BY last_heartbeat DESC LIMIT 1").fetchone()
+    return row["id"] if row else None
+
+
+def execute_get_device_security_status(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    if not dev_id:
+        return {"error": "No enrolled devices found. Please enroll your computer using an enrollment token."}
+
+    dev = db.execute("SELECT * FROM enrolled_devices WHERE id = ?", (dev_id,)).fetchone()
+    if not dev:
+        return {"error": f"Device '{dev_id}' not found."}
+
+    alerts_count = db.execute("SELECT COUNT(*) FROM device_security_alerts WHERE device_id = ? AND status = 'OPEN'", (dev_id,)).fetchone()[0]
+    fw = db.execute("SELECT * FROM device_firewall_status WHERE device_id = ?", (dev_id,)).fetchone()
+    health = db.execute("SELECT * FROM device_health_telemetry WHERE device_id = ? ORDER BY timestamp DESC LIMIT 1", (dev_id,)).fetchone()
+    consent = db.execute("SELECT permission_key, granted FROM device_consent_records WHERE device_id = ?", (dev_id,)).fetchall()
+
+    granted_perms = [c["permission_key"] for c in consent if c["granted"]]
+    withheld_perms = [c["permission_key"] for c in consent if not c["granted"]]
+
+    return {
+        "device_id": dev["id"],
+        "device_name": dev["device_name"],
+        "hostname": dev["hostname"],
+        "os": f"{dev['os_type']} {dev['os_release']} ({dev['os_version']})",
+        "agent_version": dev["agent_version"],
+        "monitoring_status": dev["monitoring_status"],
+        "is_revoked": bool(dev["is_revoked"]),
+        "last_heartbeat": dev["last_heartbeat"],
+        "ip_address": dev["ip_address"],
+        "cpu_cores": dev["cpu_cores"],
+        "total_memory_mb": dev["total_memory_mb"],
+        "open_alerts_count": alerts_count,
+        "firewall": {
+            "type": fw["os_firewall_type"] if fw else "unknown",
+            "is_enabled": bool(fw["is_enabled"]) if fw else False,
+            "default_inbound": fw["default_inbound"] if fw else "UNKNOWN"
+        },
+        "latest_health": {
+            "cpu_percent": health["cpu_percent"] if health else 0.0,
+            "memory_percent": health["memory_percent"] if health else 0.0,
+            "disk_percent": health["disk_percent"] if health else 0.0
+        } if health else None,
+        "granted_permissions": granted_perms,
+        "withheld_permissions": withheld_perms
+    }
+
+
+def execute_check_suspicious_connections(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    if not dev_id:
+        return {"error": "No enrolled devices found."}
+
+    rows = db.execute(
+        """SELECT * FROM device_connections
+           WHERE device_id = ? AND is_suspicious = 1
+           ORDER BY observed_at DESC LIMIT 20""",
+        (dev_id,)
+    ).fetchall()
+
+    total_conns = db.execute("SELECT COUNT(*) FROM device_connections WHERE device_id = ?", (dev_id,)).fetchone()[0]
+    suspicious_list = [dict(r) for r in rows]
+
+    return {
+        "device_id": dev_id,
+        "total_connections_observed": total_conns,
+        "suspicious_count": len(suspicious_list),
+        "suspicious_connections": suspicious_list,
+        "has_suspicious_connections": len(suspicious_list) > 0,
+        "status": "SUSPICIOUS_ACTIVITY_DETECTED" if len(suspicious_list) > 0 else "ALL_CONNECTIONS_CLEAN"
+    }
+
+
+def execute_get_device_security_alerts(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    limit = int(params.get("limit", 10))
+
+    sql = "SELECT * FROM device_security_alerts WHERE status = 'OPEN'"
+    args = []
+    if dev_id:
+        sql += " AND device_id = ?"
+        args.append(dev_id)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    args.append(limit)
+
+    rows = db.execute(sql, tuple(args)).fetchall()
+    alerts = []
+    for r in rows:
+        d = dict(r)
+        if d.get("evidence_json"):
+            try:
+                d["evidence"] = json.loads(d["evidence_json"])
+            except Exception:
+                d["evidence"] = {}
+        alerts.append(d)
+
+    return {
+        "device_id": dev_id or "ALL",
+        "count": len(alerts),
+        "alerts": alerts
+    }
+
+
+def execute_get_endpoint_firewall_status(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    if not dev_id:
+        return {"error": "No enrolled devices found."}
+
+    fw = db.execute("SELECT * FROM device_firewall_status WHERE device_id = ?", (dev_id,)).fetchone()
+    if not fw:
+        return {"error": f"Firewall status not recorded for device '{dev_id}'."}
+
+    fw_dict = dict(fw)
+    profiles = json.loads(fw_dict["profile_statuses_json"]) if fw_dict.get("profile_statuses_json") else {}
+
+    return {
+        "device_id": dev_id,
+        "firewall_type": fw_dict["os_firewall_type"],
+        "is_enabled": bool(fw_dict["is_enabled"]),
+        "profiles": profiles,
+        "default_inbound": fw_dict["default_inbound"],
+        "default_outbound": fw_dict["default_outbound"],
+        "active_rules_count": fw_dict["active_rules_count"],
+        "last_inspected": fw_dict["last_inspected"],
+        "summary": fw_dict["raw_summary"]
+    }
+
+
+def execute_pause_endpoint_monitoring(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    if not dev_id:
+        return {"error": "No enrolled devices found."}
+
+    db.execute("UPDATE enrolled_devices SET monitoring_status = 'PAUSED' WHERE id = ?", (dev_id,))
+    now = now_iso()
+    db.execute(
+        "INSERT INTO device_audit_logs (device_id, action, actor, details_json, timestamp) VALUES (?, 'MONITORING_PAUSED', 'jarvis', '{}', ?)",
+        (dev_id, now)
+    )
+    return {
+        "status": "PAUSED",
+        "device_id": dev_id,
+        "message": f"Security monitoring for device '{dev_id}' has been paused. Telemetry collection suspended."
+    }
+
+
+def execute_disconnect_endpoint_device(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    dev_id = _resolve_target_device_id(db, params.get("device_id"))
+    if not dev_id:
+        return {"error": "No enrolled devices found."}
+
+    db.execute("UPDATE enrolled_devices SET monitoring_status = 'DISCONNECTED' WHERE id = ?", (dev_id,))
+    now = now_iso()
+    db.execute(
+        "INSERT INTO device_audit_logs (device_id, action, actor, details_json, timestamp) VALUES (?, 'DEVICE_DISCONNECTED', 'jarvis', '{}', ?)",
+        (dev_id, now)
+    )
+    return {
+        "status": "DISCONNECTED",
+        "device_id": dev_id,
+        "message": f"Device '{dev_id}' has been disconnected from dashboard synchronization."
     }
 
 # Mapping of tool names to their execution functions
@@ -618,7 +979,19 @@ TOOL_HANDLERS = {
     "generate_incident_report_draft": execute_generate_incident_report_draft,
     "navigate_frontend": execute_navigate_frontend,
     "prepare_kill_switch": execute_prepare_kill_switch,
-    "prepare_approval_decision": execute_prepare_approval_decision
+    "prepare_approval_decision": execute_prepare_approval_decision,
+    "get_network_monitoring_status": execute_get_network_monitoring_status,
+    "get_network_discovered_devices": execute_get_network_discovered_devices,
+    "get_network_security_alerts": execute_get_network_security_alerts,
+    "start_network_monitoring": execute_start_network_monitoring,
+    "stop_network_monitoring": execute_stop_network_monitoring,
+    "trigger_network_scan_now": execute_trigger_network_scan_now,
+    "get_device_security_status": execute_get_device_security_status,
+    "check_suspicious_connections": execute_check_suspicious_connections,
+    "get_device_security_alerts": execute_get_device_security_alerts,
+    "get_endpoint_firewall_status": execute_get_endpoint_firewall_status,
+    "pause_endpoint_monitoring": execute_pause_endpoint_monitoring,
+    "disconnect_endpoint_device": execute_disconnect_endpoint_device
 }
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:

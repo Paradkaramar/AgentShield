@@ -3,6 +3,9 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { OverviewPage } from "./pages/OverviewPage";
 import { RealTimeMonitorPage } from "./pages/RealTimeMonitorPage";
+import { FirewallPage } from "./pages/FirewallPage";
+import { NetworkMonitoringPage } from "./pages/NetworkMonitoringPage";
+import { EndpointSecurityPage } from "./pages/EndpointSecurityPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { AgentLabPage } from "./pages/AgentLabPage";
 import { ApprovalsPage } from "./pages/ApprovalsPage";
@@ -151,7 +154,13 @@ export default function App() {
             />
           )}
 
+          {currentPage === "Device Security" && <EndpointSecurityPage />}
+
           {currentPage === "Real-Time Monitor" && <RealTimeMonitorPage />}
+
+          {currentPage === "Three-Layer Firewall" && <FirewallPage />}
+
+          {currentPage === "Network Monitoring" && <NetworkMonitoringPage />}
 
           {currentPage === "Agents" && (
             <AgentsPage

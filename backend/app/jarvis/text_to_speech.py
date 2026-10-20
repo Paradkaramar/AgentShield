@@ -15,12 +15,12 @@ from .language_detection import detect_text_language
 # Registered Local Voice Profiles
 LOCAL_VOICES_REGISTRY = {
     # Marathi Local Voices
-    "mr-IN-aarav-local": {
-        "id": "mr-IN-aarav-local",
-        "name": "Aarav (मराठी - Marathi Male)",
+    "mr-IN-amoja-female": {
+        "id": "mr-IN-amoja-female",
+        "name": "AMOJA AI (मराठी - Marathi Female Autonomous Defense)",
         "language": "mr",
-        "gender": "male",
-        "base_freq": 130.0,
+        "gender": "female",
+        "base_freq": 218.0,
         "is_local": True,
         "engine": "piper_indic_onnx"
     },
@@ -33,14 +33,23 @@ LOCAL_VOICES_REGISTRY = {
         "is_local": True,
         "engine": "piper_indic_onnx"
     },
+    "mr-IN-aarav-local": {
+        "id": "mr-IN-aarav-local",
+        "name": "Aarav (मराठी - Marathi Male)",
+        "language": "mr",
+        "gender": "male",
+        "base_freq": 130.0,
+        "is_local": True,
+        "engine": "piper_indic_onnx"
+    },
 
     # Hindi Local Voices
-    "hi-IN-kabir-local": {
-        "id": "hi-IN-kabir-local",
-        "name": "Kabir (हिन्दी - Hindi Male)",
+    "hi-IN-amoja-female": {
+        "id": "hi-IN-amoja-female",
+        "name": "AMOJA AI (हिन्दी - Hindi Female Autonomous Defense)",
         "language": "hi",
-        "gender": "male",
-        "base_freq": 135.0,
+        "gender": "female",
+        "base_freq": 220.0,
         "is_local": True,
         "engine": "piper_indic_onnx"
     },
@@ -53,8 +62,26 @@ LOCAL_VOICES_REGISTRY = {
         "is_local": True,
         "engine": "piper_indic_onnx"
     },
+    "hi-IN-kabir-local": {
+        "id": "hi-IN-kabir-local",
+        "name": "Kabir (हिन्दी - Hindi Male)",
+        "language": "hi",
+        "gender": "male",
+        "base_freq": 135.0,
+        "is_local": True,
+        "engine": "piper_indic_onnx"
+    },
 
     # English Local Cybernetic Voices
+    "en-US-amoja-female": {
+        "id": "en-US-amoja-female",
+        "name": "AMOJA AI (English Female - Autonomous Defense)",
+        "language": "en",
+        "gender": "female",
+        "base_freq": 215.0,
+        "is_local": True,
+        "engine": "piper_en_onnx"
+    },
     "en-GB-jarvis-local": {
         "id": "en-GB-jarvis-local",
         "name": "J.A.R.V.I.S. (Cybernetic British Male)",
@@ -86,12 +113,12 @@ class LocalTextToSpeechEngine:
         return self.get_supported_voices(language)
 
     def get_default_voice_for_language(self, language: str) -> Dict[str, Any]:
-        """Resolves the most natural default voice for Marathi, Hindi, or English."""
+        """Resolves the default AMOJA female voice for Marathi, Hindi, Hinglish, or English."""
         if language == "mr":
-            return LOCAL_VOICES_REGISTRY["mr-IN-aarav-local"]
+            return LOCAL_VOICES_REGISTRY.get("mr-IN-amoja-female", LOCAL_VOICES_REGISTRY["mr-IN-ananya-local"])
         if language in {"hi", "hinglish"}:
-            return LOCAL_VOICES_REGISTRY["hi-IN-kabir-local"]
-        return LOCAL_VOICES_REGISTRY["en-GB-jarvis-local"]
+            return LOCAL_VOICES_REGISTRY.get("hi-IN-amoja-female", LOCAL_VOICES_REGISTRY["hi-IN-kavya-local"])
+        return LOCAL_VOICES_REGISTRY.get("en-US-amoja-female", LOCAL_VOICES_REGISTRY["en-GB-jarvis-local"])
 
     def synthesize_wav(
         self,
@@ -128,15 +155,27 @@ class LocalTextToSpeechEngine:
             pitch=speech_pitch
         )
 
+    def has_neural_tts(self) -> bool:
+        """Checks if an actual neural speech synthesis engine is available."""
+        try:
+            import piper
+            return True
+        except ImportError:
+            pass
+        return False
+
     def synthesize_base64(
         self,
         text: str,
         language: Optional[str] = None,
         voice_id: Optional[str] = None,
         speech_rate: float = 1.05,
-        speech_pitch: float = 1.0
-    ) -> str:
-        """Synthesizes audio and returns base64 encoded WAV string."""
+        speech_pitch: float = 1.0,
+        allow_acoustic_fallback: bool = True
+    ) -> Optional[str]:
+        """Synthesizes audio and returns base64 encoded WAV string. Generates harmonic acoustic audio
+        when neural TTS is absent.
+        """
         import base64
         wav_bytes = self.synthesize_wav(text, language, voice_id, speech_rate, speech_pitch)
         return base64.b64encode(wav_bytes).decode("ascii")
@@ -182,10 +221,18 @@ class LocalTextToSpeechEngine:
             # Prosodic pitch contour modulation
             current_f0 = base_f0 * (1.0 + 0.08 * math.sin(t * 6.28 * 1.8) - 0.04 * (t / duration_sec))
 
-            # Resonant formant harmonic synthesis (F0, F1, F2 harmonics)
+            # Resonant formant harmonic synthesis tailored to voice profile
+            is_female = voice.get("gender") == "female"
             f0_wave = math.sin(2.0 * math.pi * current_f0 * t)
-            f1_wave = 0.45 * math.sin(2.0 * math.pi * (current_f0 * 2.8) * t)
-            f2_wave = 0.25 * math.sin(2.0 * math.pi * (current_f0 * 5.2) * t)
+            if is_female:
+                f1_wave = 0.42 * math.sin(2.0 * math.pi * (current_f0 * 2.6) * t)
+                f2_wave = 0.28 * math.sin(2.0 * math.pi * (current_f0 * 6.5) * t)
+                f3_wave = 0.14 * math.sin(2.0 * math.pi * (current_f0 * 10.8) * t)
+                raw_harmonic = (f0_wave + f1_wave + f2_wave + f3_wave)
+            else:
+                f1_wave = 0.45 * math.sin(2.0 * math.pi * (current_f0 * 2.8) * t)
+                f2_wave = 0.25 * math.sin(2.0 * math.pi * (current_f0 * 5.2) * t)
+                raw_harmonic = (f0_wave + f1_wave + f2_wave)
 
             # Tapering envelope at start and finish
             env = 1.0
@@ -195,7 +242,7 @@ class LocalTextToSpeechEngine:
                 env = (total_samples - i) / 800.0
 
             # Combine waves
-            sample_val = (f0_wave + f1_wave + f2_wave) * env * max(0.2, syllable_phase) * 0.28
+            sample_val = raw_harmonic * env * max(0.2, syllable_phase) * 0.27
             sample_int16 = int(max(-32767, min(32767, sample_val * 32767)))
             samples.append(sample_int16)
 

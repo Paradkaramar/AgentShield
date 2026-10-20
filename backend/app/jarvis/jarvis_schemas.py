@@ -60,6 +60,7 @@ class JarvisMessageRequest(BaseModel):
     language: JarvisLanguage = JarvisLanguage.AUTO
     is_voice: bool = False
     context: Optional[JarvisSecurityContext] = None
+    personality_mode: Optional[str] = "friendly"
 
 class JarvisMessageResponse(BaseModel):
     session_id: str
@@ -76,6 +77,7 @@ class JarvisMessageResponse(BaseModel):
     audio_confidence: Optional[float] = None
     is_local_mode: bool = True
     audio_base64: Optional[str] = None
+    personality_mode: Optional[str] = "friendly"
 
 class JarvisBriefingResponse(BaseModel):
     timestamp: str
@@ -118,6 +120,11 @@ class JarvisPreferences(BaseModel):
     proactive_briefings_enabled: bool = True
     sound_effects_enabled: bool = True
     local_mode: bool = True
+    wake_word_enabled: bool = False
+    cloud_processing_consent: bool = False
+    mic_muted: bool = False
+    push_to_talk_mode: bool = False
+    personality_mode: str = "friendly"
 
 class JarvisAudioTranscribeRequest(BaseModel):
     audio_base64: str

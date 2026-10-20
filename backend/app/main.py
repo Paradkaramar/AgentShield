@@ -19,14 +19,23 @@ from .api import (
     simulation_routes,
     digital_twin_routes,
     forensics_routes,
-    jarvis_routes
+    jarvis_routes,
+    network_routes,
+    firewall_routes,
+    endpoint_routes
 )
+from .services.network_monitor import network_monitoring_service
+from .firewall.app_firewall import AppFirewallMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database tables and seed baseline data
     init_db()
+    # Start continuous background network monitoring service
+    network_monitoring_service.start_background_service()
     yield
+    # Graceful shutdown of network monitoring service
+    await network_monitoring_service.stop_background_service()
 
 app = FastAPI(
     title="AgentShield — AI Agent Security Platform",
@@ -42,6 +51,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Layer 2: Application Firewall Middleware (OWASP inspection, rate limiting, secure headers)
+app.add_middleware(AppFirewallMiddleware)
 
 # Register all modular API routers
 app.include_router(analytics_routes.router)
@@ -59,6 +70,9 @@ app.include_router(simulation_routes.router)
 app.include_router(digital_twin_routes.router)
 app.include_router(forensics_routes.router)
 app.include_router(jarvis_routes.router)
+app.include_router(network_routes.router)
+app.include_router(firewall_routes.router)
+app.include_router(endpoint_routes.router)
 
 @app.get("/health", tags=["Health & Status"])
 def health_check():

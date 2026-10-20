@@ -27,6 +27,7 @@ Tagline: **"Who Controls the AI?"**
 | **Compromised Canary Access** | Agent accessing synthetic canary tokens in memory or mock tables | `engines/canary.py` instant tripwire trigger & automatic critical incident creation |
 | **Multi-Agent Privilege Jump** | Low-privilege agent delegating to high-privilege agent | `engines/multi_agent.py` cross-agent delegation verification with 15% trust decay per hop |
 | **Rogue / Shadow AI** | Uninstrumented process calling external LLM APIs directly | `engines/shadow_ai.py` network egress inspection & onboarding workflow |
+| **Network Attack Surface Drift** | Newly spawned rogue nodes, unexpected open ports, service changes in agent enclaves | `engines/network_scanner.py` & `services/network_monitor.py` continuous authorized sweeps & baseline diff |
 | **Control Plane Probing** | Agent inspecting prompt templates or internal security source code | `engines/reverse_engineering.py` defensive reverse engineering detection |
 
 ---

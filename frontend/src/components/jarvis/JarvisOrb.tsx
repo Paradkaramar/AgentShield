@@ -34,10 +34,10 @@ export const JarvisOrb: React.FC<Props> = ({
   }, [state]);
 
   const baseColors = {
-    IDLE: { core: "#00e5ff", glow: "rgba(0, 229, 255, 0.4)", ring: "#0099ff", energy: "#38bdf8" },
-    LISTENING: { core: "#00ffcc", glow: "rgba(0, 255, 204, 0.65)", ring: "#00e5ff", energy: "#7dd3fc" },
-    PROCESSING: { core: "#38bdf8", glow: "rgba(56, 189, 248, 0.6)", ring: "#f59e0b", energy: "#fbbf24" },
-    SPEAKING: { core: "#00f0ff", glow: "rgba(0, 240, 255, 0.75)", ring: "#60a5fa", energy: "#93c5fd" },
+    IDLE: { core: "#76b900", glow: "rgba(118, 185, 0, 0.4)", ring: "#10b981", energy: "#a3e635" },
+    LISTENING: { core: "#00ff88", glow: "rgba(0, 255, 136, 0.75)", ring: "#76b900", energy: "#86efac" },
+    PROCESSING: { core: "#76b900", glow: "rgba(118, 185, 0, 0.75)", ring: "#00ff88", energy: "#86cf00" },
+    SPEAKING: { core: "#76b900", glow: "rgba(118, 185, 0, 0.8)", ring: "#00ff88", energy: "#bef264" },
     ERROR: { core: "#ef4444", glow: "rgba(239, 68, 68, 0.75)", ring: "#dc2626", energy: "#fca5a5" },
   };
 

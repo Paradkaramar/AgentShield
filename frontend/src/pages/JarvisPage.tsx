@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import {
   ShieldAlert, Bot, Mic, Cpu, Radio, Activity,
-  Settings, RefreshCw, Volume2, ShieldCheck, Terminal, Compass, Sparkles
+  Settings, RefreshCw, Volume2, ShieldCheck, Terminal, Compass, Sparkles, Square
 } from "lucide-react";
 import { JarvisOrb } from "../components/jarvis/JarvisOrb";
 import { JarvisWaveform } from "../components/jarvis/JarvisWaveform";
@@ -29,11 +29,17 @@ interface Props {
 export const JarvisPage: React.FC<Props> = ({
   onNavigatePage,
   selectedAgentId,
-  selectedIncidentId
+  selectedIncidentId,
 }) => {
   const [jarvisState, setJarvisState] = useState<JarvisState>("IDLE");
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isContinuousVoice, setIsContinuousVoice] = useState(false);
+  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
+  const [micPermission, setMicPermission] = useState<"granted" | "denied" | "prompt" | "unsupported">("prompt");
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [messages, setMessages] = useState<JarvisMessage[]>([]);
   const [transcription, setTranscription] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState<JarvisLanguage>("auto");
@@ -47,14 +53,24 @@ export const JarvisPage: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<"terminal" | "briefing" | "tools" | "settings">("terminal");
   const [voiceEngines, setVoiceEngines] = useState<JarvisVoiceEngineInfo | null>(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [personalityMode, setPersonalityMode] = useState<"friendly" | "security">("friendly");
 
   useEffect(() => {
+    // Check mic permission
+    jarvisVoice.checkMicrophonePermission().then(status => {
+      setMicPermission(status);
+    });
+
     // Load initial data
     getJarvisPreferences()
       .then(p => {
         setPreferences(p);
         setIsMuted(!p.voice_enabled);
+        setIsMicMuted(Boolean(p.mic_muted));
+        setIsWakeWordEnabled(Boolean(p.wake_word_enabled));
         setSelectedLanguage(p.default_language || "auto");
+        jarvisVoice.setMicrophoneMuted(Boolean(p.mic_muted));
+        jarvisVoice.setWakeWordEnabled(Boolean(p.wake_word_enabled));
         jarvisVoice.setSpeechSettings(
           p.speech_rate || 1.05,
           p.speech_pitch || 1.0,
@@ -89,6 +105,15 @@ export const JarvisPage: React.FC<Props> = ({
       }
     };
 
+    jarvisVoice.onWakeWordDetected = (phrase) => {
+      setErrorMessage(`Wake word detected: "${phrase}". AMOJA listening...`);
+      setTimeout(() => setErrorMessage(""), 3500);
+    };
+
+    jarvisVoice.onPermissionStatusChange = (status) => {
+      setMicPermission(status);
+    };
+
     jarvisVoice.onError = (err) => {
       setErrorMessage(err);
       setTimeout(() => setErrorMessage(""), 5000);
@@ -97,6 +122,50 @@ export const JarvisPage: React.FC<Props> = ({
     return () => {
       jarvisVoice.stopListening();
       jarvisVoice.stopSpeaking();
+    };
+  }, []);
+
+  // Recording elapsed timer effect
+  useEffect(() => {
+    if (!isListening) {
+      setRecordingDuration(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setRecordingDuration(jarvisVoice.getRecordingDurationSeconds());
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isListening]);
+
+  // Spacebar Push-to-Talk keyboard listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+        if (activeTag !== "input" && activeTag !== "textarea") {
+          e.preventDefault();
+          setIsPushToTalkActive(true);
+          jarvisVoice.startPushToTalk();
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+        if (activeTag !== "input" && activeTag !== "textarea") {
+          e.preventDefault();
+          setIsPushToTalkActive(false);
+          jarvisVoice.stopPushToTalk();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
 
@@ -129,6 +198,7 @@ export const JarvisPage: React.FC<Props> = ({
         sessionId,
         language: selectedLanguage,
         isVoice,
+        personalityMode,
         context: {
           current_page: "JARVIS Assistant",
           selected_agent_id: selectedAgentId,
@@ -162,10 +232,10 @@ export const JarvisPage: React.FC<Props> = ({
 
       if (res.speech_text && !isMuted) {
         setJarvisState("SPEAKING");
-        if (res.audio_base64) {
-          await jarvisVoice.playLocalAudioBase64(res.audio_base64);
-        } else {
+        if (jarvisVoice.isSpeechSynthesisSupported()) {
           await jarvisVoice.speak(res.speech_text);
+        } else if (res.audio_base64) {
+          await jarvisVoice.playLocalAudioBase64(res.audio_base64);
         }
       } else {
         setJarvisState("IDLE");
@@ -270,24 +340,147 @@ export const JarvisPage: React.FC<Props> = ({
     if (nextMuted) jarvisVoice.stopSpeaking();
   };
 
+  const handleToggleMicMute = () => {
+    const nextVal = !isMicMuted;
+    setIsMicMuted(nextVal);
+    jarvisVoice.setMicrophoneMuted(nextVal);
+    if (preferences) {
+      const updated = { ...preferences, mic_muted: nextVal };
+      setPreferences(updated);
+      saveJarvisPreferences(updated).catch(() => {});
+    }
+  };
+
+  const handleToggleWakeWord = () => {
+    const nextVal = !isWakeWordEnabled;
+    setIsWakeWordEnabled(nextVal);
+    jarvisVoice.setWakeWordEnabled(nextVal);
+    if (preferences) {
+      const updated = { ...preferences, wake_word_enabled: nextVal };
+      setPreferences(updated);
+      saveJarvisPreferences(updated).catch(() => {});
+    }
+  };
+
+  const handleStartPushToTalk = () => {
+    setIsPushToTalkActive(true);
+    jarvisVoice.startPushToTalk();
+  };
+
+  const handleStopPushToTalk = () => {
+    setIsPushToTalkActive(false);
+    jarvisVoice.stopPushToTalk();
+  };
+
+  const handleRequestMicPermission = async () => {
+    const granted = await jarvisVoice.requestMicrophonePermission();
+    setMicPermission(granted ? "granted" : "denied");
+  };
+
+  const handleToggleContinuousVoice = () => {
+    const nextVal = !isContinuousVoice;
+    setIsContinuousVoice(nextVal);
+    jarvisVoice.setContinuousMode(nextVal);
+    if (nextVal && jarvisState === "IDLE") {
+      jarvisVoice.startListening();
+    }
+  };
+
+  const handleInterruptPlayback = () => {
+    jarvisVoice.interruptPlayback();
+  };
+
   return (
     <div className="jarvis-page-container">
       {/* Top Holographic Header */}
       <div className="jarvis-page-header">
         <div className="header-info">
           <div className="holographic-badge">
-            <Cpu size={22} className="jarvis-icon-glow" />
+            <Cpu size={22} className="jarvis-icon-glow" style={{ color: "#76b900" }} />
           </div>
           <div>
-            <h2>JARVIS AI SECURITY COMMAND CENTER</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <h2>AMOJA AI // SECURITY COMMAND CENTER</h2>
+              <span style={{ fontSize: "10px", padding: "3px 8px", background: "rgba(118, 185, 0, 0.2)", color: "#76b900", borderRadius: "4px", border: "1px solid rgba(118, 185, 0, 0.4)", fontWeight: 700, letterSpacing: "0.5px" }}>
+                DGX ACCELERATED
+              </span>
+              <span style={{ fontSize: "10px", padding: "3px 8px", background: "rgba(0, 255, 136, 0.15)", color: "#00ff88", borderRadius: "4px", border: "1px solid rgba(0, 255, 136, 0.35)", fontWeight: 700 }}>
+                FEMALE JARVIS
+              </span>
+            </div>
             <p className="subtitle">
-              Cinematic Autonomous AI Security Control Plane — Speech Recognition, Voice Synthesis, & Grounded Tool Execution
+              // NVIDIA AI ARCHITECTURE // Autonomous Cybersecurity Defense — Two-Way Continuous Voice, Barge-In Interruption, & Multilingual Grounded Execution
             </p>
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="jarvis-tab-nav">
+        {/* Tab Navigation & Live Voice Controls */}
+        <div className="jarvis-tab-nav" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Personality Mode Toggle */}
+          <button
+            type="button"
+            className="tab-btn"
+            onClick={() => setPersonalityMode(m => m === "friendly" ? "security" : "friendly")}
+            title={`Assistant Personality: ${personalityMode === "friendly" ? "Friendly Companion (Warm & Engaging)" : "SOC Security Analyst (Crisp & Direct)"}`}
+            style={{
+              borderColor: personalityMode === "friendly" ? "#76b900" : "#00ff88",
+              color: personalityMode === "friendly" ? "#76b900" : "#00ff88",
+              background: personalityMode === "friendly" ? "rgba(118, 185, 0, 0.18)" : "rgba(0, 255, 136, 0.15)",
+              fontWeight: 700
+            }}
+          >
+            <span>{personalityMode === "friendly" ? "🌱 MODE: FRIENDLY" : "🛡️ MODE: SECURITY"}</span>
+          </button>
+
+          {/* Optional Wake Word Header Toggle */}
+          <button
+            type="button"
+            className={`tab-btn ${isWakeWordEnabled ? "active" : ""}`}
+            onClick={handleToggleWakeWord}
+            title={isWakeWordEnabled ? "Wake word active: say 'Hey Amoja' to command assistant" : "Enable 'Hey Amoja' wake-word activation"}
+            style={{
+              borderColor: isWakeWordEnabled ? "#76b900" : undefined,
+              color: isWakeWordEnabled ? "#76b900" : undefined,
+              background: isWakeWordEnabled ? "rgba(118, 185, 0, 0.2)" : undefined
+            }}
+          >
+            <span>{isWakeWordEnabled ? "WAKE: HEY AMOJA" : "WAKE: OFF"}</span>
+          </button>
+
+          {/* Hands-Free Continuous Voice Toggle */}
+          <button
+            type="button"
+            className={`tab-btn ${isContinuousVoice ? "active" : ""}`}
+            onClick={handleToggleContinuousVoice}
+            title={isContinuousVoice ? "Hands-free continuous conversation active. Click to disable." : "Enable hands-free continuous two-way conversation mode"}
+            style={{
+              borderColor: isContinuousVoice ? "#00ff88" : undefined,
+              color: isContinuousVoice ? "#00ff88" : undefined,
+              background: isContinuousVoice ? "rgba(0, 255, 136, 0.18)" : undefined
+            }}
+          >
+            <Radio size={14} style={{ color: isContinuousVoice ? "#00ff88" : undefined }} />
+            <span>{isContinuousVoice ? "LIVE VOICE ON" : "HANDS-FREE"}</span>
+          </button>
+
+          {/* Barge-In / Interrupt Button when AMOJA is speaking */}
+          {jarvisState === "SPEAKING" && (
+            <button
+              type="button"
+              className="tab-btn"
+              onClick={handleInterruptPlayback}
+              title="Barge-in / Interrupt AMOJA speaking immediately"
+              style={{
+                borderColor: "#ef4444",
+                color: "#ef4444",
+                background: "rgba(239, 68, 68, 0.2)"
+              }}
+            >
+              <Square size={12} fill="currentColor" />
+              <span>INTERRUPT</span>
+            </button>
+          )}
+
           <button
             type="button"
             className={`tab-btn ${activeTab === "terminal" ? "active" : ""}`}
@@ -355,11 +548,21 @@ export const JarvisPage: React.FC<Props> = ({
                 state={jarvisState}
                 isListening={isListening}
                 isMuted={isMuted}
+                isMicMuted={isMicMuted}
                 isSpeechSupported={jarvisVoice.isSpeechRecognitionSupported()}
                 isPaused={isPaused}
+                isWakeWordEnabled={isWakeWordEnabled}
+                isPushToTalkActive={isPushToTalkActive}
+                micPermissionStatus={micPermission}
+                recordingDurationSeconds={recordingDuration}
                 onToggleListen={handleToggleListen}
                 onStopListening={() => jarvisVoice.stopListening()}
                 onToggleMute={handleToggleMute}
+                onToggleMicMute={handleToggleMicMute}
+                onToggleWakeWord={handleToggleWakeWord}
+                onStartPushToTalk={handleStartPushToTalk}
+                onStopPushToTalk={handleStopPushToTalk}
+                onRequestMicPermission={handleRequestMicPermission}
                 onStopSpeaking={() => {
                   jarvisVoice.stopSpeaking();
                   setIsPaused(false);
@@ -415,6 +618,8 @@ export const JarvisPage: React.FC<Props> = ({
               transcription={transcription}
               errorMessage={errorMessage}
               onPlayMessageAudio={handlePlayMessageAudio}
+              personalityMode={personalityMode}
+              onTogglePersonalityMode={setPersonalityMode}
             />
           </div>
         </div>
@@ -551,9 +756,9 @@ export const JarvisPage: React.FC<Props> = ({
 
               {/* Local Indic Voice Profile Selector */}
               <div className="form-row">
-                <label>Active Local Voice Profile (Piper / Indic-TTS Model)</label>
+                <label>Active Voice Profile (AMOJA Female Defense & Multilingual Models)</label>
                 <select
-                  value={preferences?.selected_voice || "mr-IN-aarav-local"}
+                  value={preferences?.selected_voice || "en-US-amoja-female"}
                   onChange={(e) => {
                     const voiceId = e.target.value;
                     const updated = { ...preferences!, selected_voice: voiceId };
@@ -562,15 +767,20 @@ export const JarvisPage: React.FC<Props> = ({
                   }}
                   className="settings-select"
                 >
-                  <optgroup label="Local Marathi Voice Profiles (Offline Indic)">
-                    <option value="mr-IN-aarav-local">Aarav (मराठी - Marathi Male Local)</option>
+                  <optgroup label="AMOJA AI Autonomous Defense Female Profiles (Recommended)">
+                    <option value="en-US-amoja-female">AMOJA AI (English Female - Autonomous Defense)</option>
+                    <option value="hi-IN-amoja-female">AMOJA AI (हिन्दी - Hindi Female Defense)</option>
+                    <option value="mr-IN-amoja-female">AMOJA AI (मराठी - Marathi Female Defense)</option>
+                  </optgroup>
+                  <optgroup label="Marathi Voice Profiles (मराठी)">
                     <option value="mr-IN-ananya-local">Ananya (मराठी - Marathi Female Local)</option>
+                    <option value="mr-IN-aarav-local">Aarav (मराठी - Marathi Male Local)</option>
                   </optgroup>
-                  <optgroup label="Local Hindi Voice Profiles (Offline Indic)">
-                    <option value="hi-IN-kabir-local">Kabir (हिन्दी - Hindi Male Local)</option>
+                  <optgroup label="Hindi Voice Profiles (हिन्दी)">
                     <option value="hi-IN-kavya-local">Kavya (हिन्दी - Hindi Female Local)</option>
+                    <option value="hi-IN-kabir-local">Kabir (हिन्दी - Hindi Male Local)</option>
                   </optgroup>
-                  <optgroup label="Local English Cybernetic Profile">
+                  <optgroup label="English Voice Profiles">
                     <option value="en-GB-jarvis-local">J.A.R.V.I.S. (Cybernetic British Male Local)</option>
                   </optgroup>
                 </select>
@@ -612,6 +822,18 @@ export const JarvisPage: React.FC<Props> = ({
                 />
               </div>
 
+              {/* Wake-Word Activation ("Hey Amoja") */}
+              <div className="form-row checkbox-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isWakeWordEnabled}
+                    onChange={handleToggleWakeWord}
+                  />
+                  <span>Enable 'Hey Amoja' Wake-Word Activation (Continuously listens for "Hey Amoja" to trigger voice interaction)</span>
+                </label>
+              </div>
+
               {/* Local-First Privacy Mode Toggle */}
               <div className="form-row checkbox-row">
                 <label>
@@ -625,6 +847,34 @@ export const JarvisPage: React.FC<Props> = ({
                     }}
                   />
                   <span>Local-First Privacy Mode (Process STT & TTS entirely offline without sending audio to external cloud APIs)</span>
+                </label>
+              </div>
+
+              {/* Cloud Processing Consent Toggle */}
+              <div className="form-row checkbox-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(preferences?.cloud_processing_consent)}
+                    onChange={(e) => {
+                      const updated = { ...preferences!, cloud_processing_consent: e.target.checked };
+                      setPreferences(updated);
+                      saveJarvisPreferences(updated).catch(() => {});
+                    }}
+                  />
+                  <span>Cloud Audio Processing Consent (Allow external cloud ASR/TTS when enabled; unchecked enforces strict local airgap)</span>
+                </label>
+              </div>
+
+              {/* Hardware Microphone Mute Toggle */}
+              <div className="form-row checkbox-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isMicMuted}
+                    onChange={handleToggleMicMute}
+                  />
+                  <span>Hardware Microphone Input Muted (Disables all voice recognition and wake-word listening)</span>
                 </label>
               </div>
 

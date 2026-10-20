@@ -4,7 +4,7 @@ import {
   AlertTriangle, Eye, Lock, Crosshair, Network, GitFork,
   Cpu, FileCode, History, Database, FileText, KeyRound,
   TrendingUp, Activity, Terminal, Settings as SettingsIcon,
-  Compass, Zap
+  Compass, Zap, Wifi, Flame, Laptop
 } from "lucide-react";
 
 interface Props {
@@ -27,8 +27,11 @@ export const Sidebar: React.FC<Props> = ({
       title: "CONTROL PLANE",
       items: [
         { name: "Overview", icon: LayoutDashboard },
+        { name: "Device Security", icon: Laptop },
         { name: "JARVIS Assistant", icon: Cpu, isJarvis: true },
         { name: "Real-Time Monitor", icon: Activity },
+        { name: "Three-Layer Firewall", icon: Flame },
+        { name: "Network Monitoring", icon: Wifi },
         { name: "Agents", icon: Bot },
         { name: "Agent Lab", icon: Radio },
         { name: "Approvals", icon: CheckCircle2, count: pendingApprovals },

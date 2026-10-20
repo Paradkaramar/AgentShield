@@ -39,24 +39,24 @@ export const JarvisWaveform: React.FC<Props> = ({
       const freqData = jarvisVoice.getAudioFrequencyData();
       const hasRealAudio = state === "LISTENING" && freqData.some(v => v > 10);
 
-      // Determine colors based on assistant state
-      let strokeColor = "#00e5ff";
-      let glowColor = "rgba(0, 229, 255, 0.4)";
+      // Determine colors based on assistant state (NVIDIA Neon Green Aesthetic)
+      let strokeColor = "#76b900";
+      let glowColor = "rgba(118, 185, 0, 0.45)";
       if (state === "SPEAKING") {
-        strokeColor = "#38bdf8";
-        glowColor = "rgba(56, 189, 248, 0.5)";
+        strokeColor = "#00ff88";
+        glowColor = "rgba(0, 255, 136, 0.65)";
       } else if (state === "PROCESSING") {
-        strokeColor = "#f59e0b";
-        glowColor = "rgba(245, 158, 11, 0.4)";
+        strokeColor = "#84cc16";
+        glowColor = "rgba(132, 204, 22, 0.55)";
       } else if (state === "ERROR") {
         strokeColor = "#ef4444";
-        glowColor = "rgba(239, 68, 68, 0.5)";
+        glowColor = "rgba(239, 68, 68, 0.6)";
       } else if (state === "LISTENING") {
-        strokeColor = "#00ffcc";
-        glowColor = "rgba(0, 255, 204, 0.6)";
+        strokeColor = "#76b900";
+        glowColor = "rgba(118, 185, 0, 0.75)";
       }
 
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 10;
       ctx.shadowColor = glowColor;
 
       for (let i = 0; i < barCount; i++) {
@@ -94,6 +94,7 @@ export const JarvisWaveform: React.FC<Props> = ({
 
         const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
         grad.addColorStop(0, strokeColor);
+        grad.addColorStop(0.3, "#00ff88");
         grad.addColorStop(0.5, "#ffffff");
         grad.addColorStop(1, strokeColor);
 

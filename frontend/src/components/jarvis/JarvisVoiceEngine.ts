@@ -16,24 +16,47 @@ export interface SpeechRecognitionErrorEvent extends Event {
 export class JarvisVoiceEngine {
   private recognition: any = null;
   private isListening: boolean = false;
-  private isMuted: boolean = false;
+  private isSpeakerMuted: boolean = false;
+  private isMicMuted: boolean = false;
+  private isContinuousMode: boolean = false;
+  private isWakeWordEnabled: boolean = false;
+  private isPushToTalkActive: boolean = false;
+  private continuousTimer: any = null;
+  private activeState: VoiceState = "IDLE";
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private microphoneStream: MediaStream | null = null;
   private selectedVoice: SpeechSynthesisVoice | null = null;
   private speechRate: number = 1.05;
-  private speechPitch: number = 1.0;
+  private speechPitch: number = 1.05;
   private speechLang: string = "en-US";
   private soundEffectsEnabled: boolean = true;
+  private recordingStartTime: number | null = null;
+  private micPermissionStatus: "granted" | "denied" | "prompt" | "unsupported" = "prompt";
+
+  // Wake-word signature regex patterns (English, Hindi, Marathi, Romanized)
+  private static readonly WAKE_WORD_PATTERN = /^(?:hey\s+)?(?:amoja|amoza|jarvis|अमोजा|अमोझा|जार्विस)\b[\s,:\-!]*/i;
+  private static readonly ANY_WAKE_WORD_PATTERN = /\b(?:hey\s+amoja|hey\s+amoza|hey\s+jarvis|अमोजा|हे\s+अमोजा|अमोजा\s+ऐक|अमोजा\s+सुनो)\b/i;
 
   // Callbacks
   public onTranscriptChange: (text: string, isFinal: boolean) => void = () => {};
   public onStateChange: (state: VoiceState) => void = () => {};
   public onError: (message: string) => void = () => {};
+  public onWakeWordDetected: (wakePhrase: string) => void = () => {};
+  public onPermissionStatusChange: (status: "granted" | "denied" | "prompt" | "unsupported") => void = () => {};
 
   constructor() {
     this.initRecognition();
     this.initVoiceList();
+    this.checkMicrophonePermission();
+  }
+
+  // Backward compatibility alias for isSpeakerMuted
+  public get isMuted(): boolean {
+    return this.isSpeakerMuted;
+  }
+  public set isMuted(val: boolean) {
+    this.isSpeakerMuted = val;
   }
 
   public isSpeechRecognitionSupported(): boolean {
@@ -42,6 +65,181 @@ export class JarvisVoiceEngine {
 
   public isSpeechSynthesisSupported(): boolean {
     return typeof window !== "undefined" && "speechSynthesis" in window;
+  }
+
+  // --- Push-to-Talk (PTT) Controls ---
+  public getPushToTalkActive(): boolean {
+    return this.isPushToTalkActive;
+  }
+
+  public async startPushToTalk(): Promise<boolean> {
+    if (this.isMicMuted) {
+      this.onError("Microphone is currently muted. Unmute the microphone to speak.");
+      return false;
+    }
+    this.isPushToTalkActive = true;
+    this.interruptPlayback();
+    return this.startListening();
+  }
+
+  public stopPushToTalk(): void {
+    this.isPushToTalkActive = false;
+    this.stopListening();
+  }
+
+  // --- Wake-Word ("Hey Amoja") Controls ---
+  public setWakeWordEnabled(enabled: boolean) {
+    this.isWakeWordEnabled = enabled;
+    if (enabled && !this.isListening && !this.isMicMuted && this.activeState === "IDLE") {
+      this.scheduleContinuousListen(300);
+    }
+  }
+
+  public getWakeWordEnabled(): boolean {
+    return this.isWakeWordEnabled;
+  }
+
+  // --- Microphone Mute vs Speaker Mute Controls ---
+  public setMicrophoneMuted(muted: boolean) {
+    this.isMicMuted = muted;
+    if (muted) {
+      this.stopListening();
+    } else if (this.isContinuousMode || this.isWakeWordEnabled) {
+      this.scheduleContinuousListen(300);
+    }
+  }
+
+  public isMicrophoneMuted(): boolean {
+    return this.isMicMuted;
+  }
+
+  public setSpeakerMuted(muted: boolean) {
+    this.isSpeakerMuted = muted;
+    if (muted) {
+      this.stopSpeaking();
+    }
+  }
+
+  public isSpeakerMutedState(): boolean {
+    return this.isSpeakerMuted;
+  }
+
+  // --- Permission Controls ---
+  public async checkMicrophonePermission(): Promise<"granted" | "denied" | "prompt" | "unsupported"> {
+    if (typeof navigator === "undefined" || !navigator.permissions || !navigator.permissions.query) {
+      this.micPermissionStatus = "unsupported";
+      return "unsupported";
+    }
+    try {
+      const status = await navigator.permissions.query({ name: "microphone" as any });
+      this.micPermissionStatus = status.state as any;
+      status.onchange = () => {
+        this.micPermissionStatus = status.state as any;
+        this.onPermissionStatusChange(this.micPermissionStatus);
+      };
+      return this.micPermissionStatus;
+    } catch {
+      this.micPermissionStatus = "prompt";
+      return "prompt";
+    }
+  }
+
+  public getMicrophonePermissionStatus(): "granted" | "denied" | "prompt" | "unsupported" {
+    return this.micPermissionStatus;
+  }
+
+  public async requestMicrophonePermission(): Promise<boolean> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.onError("Microphone hardware access is not supported in this browser environment.");
+      return false;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.micPermissionStatus = "granted";
+      this.onPermissionStatusChange("granted");
+      stream.getTracks().forEach(t => t.stop());
+      return true;
+    } catch (err: any) {
+      this.micPermissionStatus = "denied";
+      this.onPermissionStatusChange("denied");
+      this.onError("Microphone permission was denied. Please allow microphone access in your browser site settings.");
+      return false;
+    }
+  }
+
+  // --- Recording Metrics ---
+  public getRecordingDurationSeconds(): number {
+    if (!this.isListening || !this.recordingStartTime) return 0;
+    return Math.max(0, Math.floor((Date.now() - this.recordingStartTime) / 1000));
+  }
+
+  public getAudioRMSLevel(): number {
+    if (!this.analyser) return 0;
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(data);
+    if (data.length === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      sum += data[i] * data[i];
+    }
+    const rms = Math.sqrt(sum / data.length);
+    return Math.min(100, Math.round((rms / 255) * 100));
+  }
+
+  public setContinuousMode(enabled: boolean) {
+    this.isContinuousMode = enabled;
+    if (!enabled && this.continuousTimer) {
+      clearTimeout(this.continuousTimer);
+      this.continuousTimer = null;
+    }
+  }
+
+  public getContinuousMode(): boolean {
+    return this.isContinuousMode;
+  }
+
+  public scheduleContinuousListen(delayMs = 350) {
+    if ((!this.isContinuousMode && !this.isWakeWordEnabled) || this.isMicMuted) return;
+    if (this.continuousTimer) clearTimeout(this.continuousTimer);
+    this.continuousTimer = setTimeout(() => {
+      this.continuousTimer = null;
+      if (
+        (this.isContinuousMode || this.isWakeWordEnabled) &&
+        !this.isMicMuted &&
+        !this.isListening &&
+        this.activeState !== "PROCESSING" &&
+        this.activeState !== "SPEAKING"
+      ) {
+        this.startListening();
+      }
+    }, delayMs);
+  }
+
+  public interruptPlayback() {
+    if (this.continuousTimer) {
+      clearTimeout(this.continuousTimer);
+      this.continuousTimer = null;
+    }
+    if (this.audioElement) {
+      try {
+        this.audioElement.pause();
+        this.audioElement.currentTime = 0;
+        this.audioElement.src = "";
+      } catch {}
+      this.audioElement = null;
+    }
+    if (this.isSpeechSynthesisSupported()) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {}
+    }
+    this.isAudioPaused = false;
+    this.notifyState("LISTENING");
+  }
+
+  private notifyState(state: VoiceState) {
+    this.activeState = state;
+    this.onStateChange(state);
   }
 
   private initRecognition() {
@@ -57,8 +255,17 @@ export class JarvisVoiceEngine {
 
       this.recognition.onstart = () => {
         this.isListening = true;
-        this.onStateChange("LISTENING");
+        this.recordingStartTime = Date.now();
+        this.notifyState("LISTENING");
         this.playActivationChime();
+      };
+
+      this.recognition.onspeechstart = () => {
+        // Only allow explicit interruption if activeState is SPEAKING and an interruption is triggered
+        if (this.activeState === "SPEAKING") {
+          // Do not interrupt automatically on minor mic noise during speech
+          return;
+        }
       };
 
       this.recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -73,15 +280,48 @@ export class JarvisVoiceEngine {
           }
         }
 
-        const text = finalTranscript || interimTranscript;
-        this.onTranscriptChange(text, Boolean(finalTranscript));
+        const rawText = (finalTranscript || interimTranscript).trim();
+        if (!rawText) return;
+
+        // Prevent self-transcription: If assistant is currently speaking, only allow interruption on explicit stop words
+        if (this.activeState === "SPEAKING") {
+          const lower = rawText.toLowerCase();
+          const isInterruptPhrase = /(?:hey\s+amoja|stop|थांबा|रुको|chup|pause|wait)\b/i.test(lower);
+          if (isInterruptPhrase) {
+            this.interruptPlayback();
+            this.onTranscriptChange(rawText, Boolean(finalTranscript));
+          }
+          // Discard self-hearing from speakers while assistant speaks
+          return;
+        }
+        // Check for optional "Hey Amoja" wake-word activation
+        if (this.isWakeWordEnabled) {
+          const match = rawText.match(JarvisVoiceEngine.WAKE_WORD_PATTERN) || rawText.match(JarvisVoiceEngine.ANY_WAKE_WORD_PATTERN);
+          if (match) {
+            this.playAcknowledgeChime();
+            this.onWakeWordDetected(match[0].trim());
+            const cleanedDirective = rawText.replace(JarvisVoiceEngine.WAKE_WORD_PATTERN, "").trim();
+            if (cleanedDirective) {
+              this.onTranscriptChange(cleanedDirective, Boolean(finalTranscript));
+            } else {
+              // User only summoned Amoja by wake word: keep listening for command
+              this.onTranscriptChange("AMOJA listening...", false);
+            }
+            return;
+          }
+        }
+
+        this.onTranscriptChange(rawText, Boolean(finalTranscript));
       };
 
       this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         this.isListening = false;
+        this.recordingStartTime = null;
         let errMsg = "Microphone error";
         if (event.error === "not-allowed" || event.error === "permission-denied") {
-          errMsg = "Microphone access denied. Please grant permission in browser settings.";
+          this.micPermissionStatus = "denied";
+          this.onPermissionStatusChange("denied");
+          errMsg = "Microphone access denied. Please grant microphone permission in your browser.";
         } else if (event.error === "no-speech") {
           errMsg = "No speech detected. Listening timed out.";
         } else if (event.error === "network") {
@@ -90,13 +330,26 @@ export class JarvisVoiceEngine {
           errMsg = `Speech recognition error: ${event.error}`;
         }
         this.onError(errMsg);
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
       };
 
       this.recognition.onend = () => {
         this.isListening = false;
+        this.recordingStartTime = null;
         this.stopMicrophoneStream();
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
+
+        // Re-arm in continuous mode or wake-word standby mode
+        if (
+          (this.isContinuousMode || this.isWakeWordEnabled) &&
+          !this.isMicMuted &&
+          !this.isPushToTalkActive &&
+          this.activeState === "IDLE" &&
+          !this.audioElement &&
+          !(this.isSpeechSynthesisSupported() && window.speechSynthesis.speaking)
+        ) {
+          this.scheduleContinuousListen(450);
+        }
       };
     } catch (e) {
       console.warn("Failed to initialize speech recognition:", e);
@@ -109,15 +362,22 @@ export class JarvisVoiceEngine {
       const voices = window.speechSynthesis.getVoices();
       if (!voices || voices.length === 0) return;
 
-      // Prefer high-quality English or Indian English / Jarvis-like voices
+      // Prefer warm, natural Female voices for AMOJA AI persona across Indic & English
       const preferred = voices.find(v => 
-        (v.name.includes("Google UK English Male") ||
-         v.name.includes("Natural") ||
-         v.name.includes("Daniel") ||
-         v.name.includes("George") ||
-         v.name.includes("Ravi") ||
-         v.name.includes("English United Kingdom")) && !v.name.includes("Female")
-      ) || voices.find(v => v.lang.startsWith("en-GB") || v.lang.startsWith("en-IN") || v.lang.startsWith("en-US")) || voices[0];
+        (v.name.includes("Female") ||
+         v.name.includes("Google UK English Female") ||
+         v.name.includes("Google US English Female") ||
+         v.name.includes("Zira") ||
+         v.name.includes("Samantha") ||
+         v.name.includes("Victoria") ||
+         v.name.includes("Kavya") ||
+         v.name.includes("Ananya") ||
+         v.name.includes("Kalpana") ||
+         v.name.includes("Neerja") ||
+         v.name.includes("Swara") ||
+         v.name.includes("Heera") ||
+         v.name.includes("Anya"))
+      ) || voices.find(v => v.lang.startsWith("en-IN") || v.lang.startsWith("en-GB") || v.lang.startsWith("en-US")) || voices[0];
 
       this.selectedVoice = preferred || null;
     };
@@ -154,14 +414,19 @@ export class JarvisVoiceEngine {
       this.recognition.lang = this.speechLang;
     }
 
-    // Attempt to pick a matching speech synthesis voice
+    // Attempt to pick a matching female speech synthesis voice for AMOJA AI
     const voices = this.getAvailableVoices();
     if (langCode === "mr") {
-      const mrVoice = voices.find(v => v.lang.startsWith("mr") || v.name.toLowerCase().includes("marathi"));
+      const mrVoice = voices.find(v => (v.lang.startsWith("mr") || v.name.toLowerCase().includes("marathi")) && (v.name.includes("Female") || v.name.includes("Ananya") || v.name.includes("Aarohi"))) ||
+                      voices.find(v => v.lang.startsWith("mr") || v.name.toLowerCase().includes("marathi"));
       if (mrVoice) this.selectedVoice = mrVoice;
     } else if (langCode === "hi") {
-      const hiVoice = voices.find(v => v.lang.startsWith("hi") || v.name.toLowerCase().includes("hindi"));
+      const hiVoice = voices.find(v => (v.lang.startsWith("hi") || v.name.toLowerCase().includes("hindi")) && (v.name.includes("Female") || v.name.includes("Kalpana") || v.name.includes("Kavya") || v.name.includes("Swara"))) ||
+                      voices.find(v => v.lang.startsWith("hi") || v.name.toLowerCase().includes("hindi"));
       if (hiVoice) this.selectedVoice = hiVoice;
+    } else {
+      const enVoice = voices.find(v => v.lang.startsWith("en") && (v.name.includes("Female") || v.name.includes("Zira") || v.name.includes("Samantha")));
+      if (enVoice) this.selectedVoice = enVoice;
     }
   }
 
@@ -173,6 +438,12 @@ export class JarvisVoiceEngine {
   public playLocalAudioBase64(base64Wav: string): Promise<void> {
     return new Promise((resolve) => {
       this.stopSpeaking();
+      if (this.recognition && this.isListening) {
+        try {
+          this.recognition.abort();
+        } catch {}
+        this.isListening = false;
+      }
       const cleanB64 = base64Wav.includes(",") ? base64Wav.split(",")[1] : base64Wav;
       const audioUrl = `data:audio/wav;base64,${cleanB64}`;
       this.lastAudioUrl = audioUrl;
@@ -203,23 +474,27 @@ export class JarvisVoiceEngine {
 
       audio.onplay = () => {
         this.isAudioPaused = false;
-        this.onStateChange("SPEAKING");
+        this.notifyState("SPEAKING");
       };
 
       audio.onended = () => {
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
         this.audioElement = null;
         resolve();
+        // Continuous hands-free voice loop: automatically re-arm listening after acoustic cooldown
+        if (this.isContinuousMode && !this.isMicMuted && !this.isMuted) {
+          this.scheduleContinuousListen(400);
+        }
       };
 
       audio.onerror = () => {
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
         this.audioElement = null;
         resolve();
       };
 
       audio.play().catch(() => {
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
         this.audioElement = null;
         resolve();
       });
@@ -230,11 +505,11 @@ export class JarvisVoiceEngine {
     if (this.audioElement && !this.audioElement.paused) {
       this.audioElement.pause();
       this.isAudioPaused = true;
-      this.onStateChange("IDLE");
+      this.notifyState("IDLE");
     } else if (this.isSpeechSynthesisSupported() && window.speechSynthesis.speaking) {
       window.speechSynthesis.pause();
       this.isAudioPaused = true;
-      this.onStateChange("IDLE");
+      this.notifyState("IDLE");
     }
   }
 
@@ -242,11 +517,11 @@ export class JarvisVoiceEngine {
     if (this.audioElement && this.isAudioPaused) {
       this.audioElement.play();
       this.isAudioPaused = false;
-      this.onStateChange("SPEAKING");
+      this.notifyState("SPEAKING");
     } else if (this.isSpeechSynthesisSupported() && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
       this.isAudioPaused = false;
-      this.onStateChange("SPEAKING");
+      this.notifyState("SPEAKING");
     }
   }
 
@@ -269,6 +544,9 @@ export class JarvisVoiceEngine {
   }
 
   public async startListening(): Promise<boolean> {
+    if (this.isMicMuted) {
+      return false;
+    }
     if (!this.isSpeechRecognitionSupported()) {
       this.onError("Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or text input.");
       return false;
@@ -306,7 +584,7 @@ export class JarvisVoiceEngine {
     }
     this.isListening = false;
     this.stopMicrophoneStream();
-    this.onStateChange("IDLE");
+    this.notifyState("IDLE");
   }
 
   public speak(text: string): Promise<void> {
@@ -316,8 +594,14 @@ export class JarvisVoiceEngine {
         return;
       }
 
-      // Stop any existing speech
+      // Stop any existing speech and pause recognition during speaking to prevent feedback
       window.speechSynthesis.cancel();
+      if (this.recognition && this.isListening) {
+        try {
+          this.recognition.abort();
+        } catch {}
+        this.isListening = false;
+      }
 
       // Clean markdown tags, emojis, and code formatting from speech
       const cleanSpeech = text
@@ -340,16 +624,20 @@ export class JarvisVoiceEngine {
       utterance.lang = this.speechLang;
 
       utterance.onstart = () => {
-        this.onStateChange("SPEAKING");
+        this.notifyState("SPEAKING");
       };
 
       utterance.onend = () => {
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
         resolve();
+        // Continuous hands-free voice loop: automatically re-arm listening after acoustic cooldown
+        if (this.isContinuousMode && !this.isMicMuted && !this.isMuted) {
+          this.scheduleContinuousListen(400);
+        }
       };
 
       utterance.onerror = () => {
-        this.onStateChange("IDLE");
+        this.notifyState("IDLE");
         resolve();
       };
 
@@ -358,10 +646,23 @@ export class JarvisVoiceEngine {
   }
 
   public stopSpeaking() {
+    if (this.continuousTimer) {
+      clearTimeout(this.continuousTimer);
+      this.continuousTimer = null;
+    }
+    if (this.audioElement) {
+      try {
+        this.audioElement.pause();
+        this.audioElement.currentTime = 0;
+        this.audioElement.src = "";
+      } catch {}
+      this.audioElement = null;
+    }
     if (this.isSpeechSynthesisSupported()) {
       window.speechSynthesis.cancel();
-      this.onStateChange("IDLE");
     }
+    this.isAudioPaused = false;
+    this.notifyState("IDLE");
   }
 
   private initAudioAnalyser(stream: MediaStream) {

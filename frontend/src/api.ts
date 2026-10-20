@@ -46,6 +46,7 @@ export async function sendJarvisMessage(
     language?: import("./types").JarvisLanguage;
     isVoice?: boolean;
     context?: import("./types").JarvisSecurityContext;
+    personalityMode?: "friendly" | "security";
   }
 ) {
   return request<any>("/api/jarvis/chat", {
@@ -55,7 +56,8 @@ export async function sendJarvisMessage(
       session_id: options?.sessionId,
       language: options?.language || "auto",
       is_voice: options?.isVoice || false,
-      context: options?.context
+      context: options?.context,
+      personality_mode: options?.personalityMode || "friendly"
     })
   });
 }
@@ -162,4 +164,111 @@ export async function synthesizeAudioJson(
     })
   });
 }
+
+// ============================================================================
+// Endpoint Security API Client Methods
+// ============================================================================
+
+export async function listEnrolledDevices() {
+  return request<import("./types").EnrolledDevice[]>("/api/endpoint/devices");
+}
+
+export async function getDeviceDetails(deviceId: string) {
+  return request<any>(`/api/endpoint/devices/${deviceId}`);
+}
+
+export async function pauseDeviceMonitoring(deviceId: string) {
+  return request<{ status: string; device_id: string }>(`/api/endpoint/devices/${deviceId}/pause`, {
+    method: "POST"
+  });
+}
+
+export async function resumeDeviceMonitoring(deviceId: string) {
+  return request<{ status: string; device_id: string }>(`/api/endpoint/devices/${deviceId}/resume`, {
+    method: "POST"
+  });
+}
+
+export async function disconnectDevice(deviceId: string) {
+  return request<{ status: string; device_id: string }>(`/api/endpoint/devices/${deviceId}/disconnect`, {
+    method: "POST"
+  });
+}
+
+export async function revokeDevice(deviceId: string, reason: string) {
+  return request<{ status: string; device_id: string; reason: string }>(`/api/endpoint/devices/${deviceId}/revoke?reason=${encodeURIComponent(reason)}`, {
+    method: "POST"
+  });
+}
+
+export async function getDeviceConsent(deviceId: string) {
+  return request<import("./types").DeviceConsentRecord[]>(`/api/endpoint/devices/${deviceId}/consent`);
+}
+
+export async function updateDeviceConsent(deviceId: string, permissions: Record<string, boolean>) {
+  return request<{ status: string; device_id: string; updated_permissions: Record<string, boolean> }>(`/api/endpoint/devices/${deviceId}/consent`, {
+    method: "PUT",
+    body: JSON.stringify({ permissions })
+  });
+}
+
+export async function getDeviceProcesses(deviceId: string, suspiciousOnly: boolean = false) {
+  return request<{ status: string; processes: import("./types").DeviceProcess[]; message?: string }>(`/api/endpoint/devices/${deviceId}/processes?suspicious_only=${suspiciousOnly}`);
+}
+
+export async function getDeviceConnections(deviceId: string, suspiciousOnly: boolean = false) {
+  return request<{ status: string; connections: import("./types").DeviceConnection[]; message?: string }>(`/api/endpoint/devices/${deviceId}/connections?suspicious_only=${suspiciousOnly}`);
+}
+
+export async function getDeviceListeningPorts(deviceId: string) {
+  return request<import("./types").DeviceListeningPort[]>(`/api/endpoint/devices/${deviceId}/listening-ports`);
+}
+
+export async function getDeviceFirewall(deviceId: string) {
+  return request<import("./types").DeviceFirewallStatus>(`/api/endpoint/devices/${deviceId}/firewall`);
+}
+
+export async function getDeviceAlerts(deviceId: string, status?: string) {
+  const url = status ? `/api/endpoint/devices/${deviceId}/alerts?status=${status}` : `/api/endpoint/devices/${deviceId}/alerts`;
+  return request<import("./types").DeviceSecurityAlert[]>(url);
+}
+
+export async function resolveSecurityAlert(alertId: number) {
+  return request<{ status: string; alert_id: number }>(`/api/endpoint/alerts/${alertId}/resolve`, {
+    method: "POST"
+  });
+}
+
+export async function requestFileScan(deviceId: string, filepath: string) {
+  return request<any>(`/api/endpoint/devices/${deviceId}/scan-file`, {
+    method: "POST",
+    body: JSON.stringify({ filepath })
+  });
+}
+
+export async function executeFirewallAction(deviceId: string, data: { action_type: string; target_value: string; reason: string; confirmation_code: string }) {
+  return request<any>(`/api/endpoint/devices/${deviceId}/firewall-action`, {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
+export async function createEnrollmentToken(validDays: number = 7) {
+  return request<import("./types").EnrollmentToken>("/api/endpoint/enrollment-tokens", {
+    method: "POST",
+    body: JSON.stringify({ valid_days: validDays })
+  });
+}
+
+export async function listEnrollmentTokens() {
+  return request<import("./types").EnrollmentToken[]>("/api/endpoint/enrollment-tokens");
+}
+
+export async function enrollDevice(data: { token: string; device_name?: string; hostname?: string; os_type?: string; consent_permissions?: Record<string, boolean> }) {
+  return request<any>("/api/endpoint/enroll", {
+    method: "POST",
+    body: JSON.stringify(data)
+  });
+}
+
 

@@ -113,18 +113,34 @@ def clear_session_history(session_id: str, user_id: str) -> bool:
         return True
 
 def update_session_context(session_id: str, user_id: str, context: JarvisSecurityContext) -> None:
-    """Updates active investigation context (selected agent, incident, etc.)."""
-    ctx_dict = context.model_dump()
-    _CONTEXT_CACHE[session_id] = ctx_dict
+    """Updates active investigation context while preserving existing contextual entities if not explicitly overridden."""
+    ctx_dict = context.model_dump() if hasattr(context, "model_dump") else dict(context)
+    existing = get_session_context(session_id, user_id)
+    merged = {**existing}
+    for k, v in ctx_dict.items():
+        if v is not None and v != "":
+            merged[k] = v
+    _CONTEXT_CACHE[session_id] = merged
     with connect() as db:
         db.execute(
             "UPDATE jarvis_sessions SET context_json = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-            (json.dumps(ctx_dict), now_iso(), session_id, user_id)
+            (json.dumps(merged), now_iso(), session_id, user_id)
+        )
+
+def set_session_context_field(session_id: str, user_id: str, field_name: str, value: Any) -> None:
+    """Safely updates a specific field in the session context (e.g. last_topic, last_tool, selected_device_id)."""
+    existing = get_session_context(session_id, user_id)
+    existing[field_name] = value
+    _CONTEXT_CACHE[session_id] = existing
+    with connect() as db:
+        db.execute(
+            "UPDATE jarvis_sessions SET context_json = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+            (json.dumps(existing), now_iso(), session_id, user_id)
         )
 
 def get_session_context(session_id: str, user_id: str) -> Dict[str, Any]:
     """Retrieves cached or persisted investigation context."""
-    if session_id in _CONTEXT_CACHE:
+    if session_id in _CONTEXT_CACHE and _CONTEXT_CACHE[session_id]:
         return _CONTEXT_CACHE[session_id]
     with connect() as db:
         row = db.execute("SELECT context_json FROM jarvis_sessions WHERE id=? AND user_id=?", (session_id, user_id)).fetchone()
@@ -136,6 +152,35 @@ def get_session_context(session_id: str, user_id: str) -> Dict[str, Any]:
             except Exception:
                 pass
     return {}
+
+def get_recent_turn_context(session_id: str, user_id: str) -> Dict[str, Any]:
+    """Extracts recent conversation turn signals including last tool executed and referenced entities."""
+    ctx = dict(get_session_context(session_id, user_id))
+    turns = _MEMORY_CACHE.get(session_id, [])
+    if not turns:
+        history = get_session_history(session_id, user_id, limit=3)
+        turns = history
+    if turns:
+        # Scan backward from most recent turn for last assistant tool calls
+        for t in reversed(turns):
+            if t.get("tool_calls"):
+                t_calls = t["tool_calls"]
+                if t_calls and isinstance(t_calls, list):
+                    last_tc = t_calls[0]
+                    t_name = last_tc.get("tool_name") if isinstance(last_tc, dict) else getattr(last_tc, "tool_name", "")
+                    if t_name and "last_tool" not in ctx:
+                        ctx["last_tool"] = t_name
+                    # Infer topic from tool
+                    if "device" in t_name or "suspicious_connections" in t_name or "firewall" in t_name:
+                        ctx.setdefault("last_topic", "endpoint")
+                    elif "network" in t_name:
+                        ctx.setdefault("last_topic", "network")
+                    elif "incident" in t_name or "alert" in t_name:
+                        ctx.setdefault("last_topic", "incident")
+                    elif "agent" in t_name or "risk" in t_name:
+                        ctx.setdefault("last_topic", "agent")
+                break
+    return ctx
 
 def list_user_sessions(user_id: str, limit: int = 15) -> List[Dict[str, Any]]:
     """Lists recent conversation sessions for a user."""

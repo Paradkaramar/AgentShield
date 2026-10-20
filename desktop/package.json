@@ -1,0 +1,19 @@
+{
+  "name": "agentshield-desktop",
+  "version": "1.2.0",
+  "description": "AgentShield Installable Personal Device Security Platform",
+  "main": "main.js",
+  "author": "AgentShield Security Engineering",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node run_desktop.js",
+    "dev": "node run_desktop.js"
+  },
+  "keywords": [
+    "endpoint-security",
+    "zero-trust",
+    "personal-device-security",
+    "agentshield",
+    "firewall"
+  ]
+}
