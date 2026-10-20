@@ -348,18 +348,47 @@ def parse_multilingual_intent(
         if target_name not in {"the", "an", "all", "this", "it", "jarvis", "monitoring", "network", "scan", "job", "device"}:
             return "prepare_kill_switch", {"agent_id": target_name, "reason": f"Multilingual command: '{user_prompt}'"}, "Agents", lang
 
-    # 18. Endpoint: Device Security Status
+    # 18. Endpoint: Device Security Status & System Diagnostics
     if any(phrase in p or phrase in p_norm for phrase in [
-        # Hindi / Hinglish
+        # Hindi / Hinglish: System & Laptop Security Check
+        "mera system check karo", "system check karo", "mera computer check karo", "computer check karo",
+        "laptop check karo", "mera laptop check karo", "system ki security check karo", "laptop ki security check karo",
+        "computer ki security check karo", "device check karo", "is system ko check karo", "mera system check",
         "is device ki security status batao", "device ki security status batao", "device security status",
         "is computer ki security status", "computer security status", "device security status batao",
+        "मेरा सिस्टम चेक करो", "मेरा कंप्यूटर चेक करो", "मेरा laptop चेक करो", "मेरा system चेक करो",
+        "सिस्टम चेक करो", "कंप्यूटर चेक करो", "लैपटॉप चेक करो", "सिस्टम की सुरक्षा चेक करो",
         "इस डिवाइस की सुरक्षा स्थिति बताओ", "डिवाइस की सुरक्षा स्थिति बताओ", "कंप्यूटर की सुरक्षा स्थिति बताओ",
-        # Marathi
+
+        # Hindi / Hinglish: Computer Slow Diagnostics
+        "mera computer slow kyu chal raha hai", "mera computer slow kyun chal raha hai",
+        "computer slow kyu chal raha hai", "computer slow kyun chal raha hai", "computer slow kyu hai",
+        "computer slow kyun hai", "laptop slow kyu chal raha hai", "laptop slow chal raha hai",
+        "laptop slow kyu hai", "system slow kyu hai", "system slow chal raha hai",
+        "मेरा computer slow क्यों चल रहा है", "मेरा कंप्यूटर धीमा क्यों चल रहा है", "कंप्यूटर धीमा क्यों चल रहा है",
+        "कंप्यूटर स्लो क्यों चल रहा है", "लैपटॉप धीमा क्यों चल रहा है", "लैपटॉप स्लो क्यों चल रहा है",
+
+        # Marathi: Laptop & System Security Check
+        "majhya laptop chi security tapas", "laptop chi security tapas", "laptop chi security check kar",
+        "majhya system chi security check kar", "system chi security check kar", "laptop chi security check kara",
+        "majhya laptop chi suraksha tapas", "laptop chi security", "laptop chi suraksha", "system chi security",
         "ya device chi suraksha sthiti sanga", "device chi suraksha sthiti sanga", "majhya computer chi suraksha sthiti sanga",
+        "माझ्या laptop ची security तपास", "माझ्या laptop ची security तपास.", "माझ्या लॅपटॉप ची सुरक्षा तपास",
+        "लॅपटॉप ची सुरक्षा तपासा", "लॅपटॉप ची सुरक्षा तपास", "लॅपटॉप ची सिक्युरिटी चेक कर",
+        "माझ्या system ची security check कर", "माझ्या सिस्टम ची सिक्युरिटी चेक करा", "सिस्टम चेक करा",
+        "लॅपटॉप ची security तपास", "laptop ची security तपास", "system ची security check कर",
         "या डिव्हाइसची सुरक्षा स्थिती सांगा", "डिव्हाइसची सुरक्षा स्थिती दाखवा", "संगणकाची सुरक्षा स्थिती सांगा",
-        # English
+
+        # Marathi: Computer Slow Diagnostics
+        "majha laptop slow ka chalat aahe", "majha computer slow ka chalat aahe", "laptop slow ka chaltoy",
+        "संगणक मंद का चालत आहे", "लॅपटॉप मंद का चालत आहे", "संगणक स्लो का चालत आहे", "लॅपटॉप स्लो का चालत आहे",
+
+        # English: Laptop & System Security Check & Slow Diagnostics
+        "check my laptop security", "check laptop security", "check my system", "check system security",
+        "check my computer security", "check my device", "scan my laptop", "inspect my system",
         "device security status", "show device security status", "what is my device security status",
-        "is this device secure", "endpoint security status"
+        "is this device secure", "endpoint security status", "why is my computer running slow",
+        "why is my computer slow", "why is my laptop running slow", "why is my laptop slow", "why is system running slow"
     ]):
         return "get_device_security_status", {"device_id": active_device}, "Device Security", lang
 

@@ -9,7 +9,16 @@ from ..db.database import connect, now_iso
 from ..engines.risk_engine import predict_near_future_risk, calculate_dynamic_risk
 from ..engines.policy_engine import detect_permission_drift
 from ..engines.kill_switch import trigger_emergency_kill_switch
-from ..core.audit import record_audit_entry
+from .cyber_tools.stego_engine import (
+    encode_stego_message, decode_stego_message, inspect_image_and_exif
+)
+from .personal_assistant import (
+    create_reminder, list_reminders, delete_reminder,
+    create_note, search_notes, list_notes, delete_note,
+    add_todo_item, list_todo_items, toggle_todo_item,
+    store_user_memory, list_user_memories, delete_user_memory,
+    launch_approved_application, search_workspace_files
+)
 
 # Registry of supported tool definitions with schemas
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -237,6 +246,119 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "device_id": {"type": "string", "description": "Optional device identifier", "default": ""}
         },
         "allowed_roles": ["admin", "operator"]
+    },
+    "steganography_inspect_image": {
+        "description": "Inspect an image for hidden steganography payloads, bitplane Shannon entropy, and EXIF/GPS forensic metadata.",
+        "category": "read",
+        "parameters": {
+            "image_data": {"type": "string", "description": "Base64 data URI (data:image/png;base64,...) or local image path"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "steganography_encode_payload": {
+        "description": "Embed a secret message into a carrier image using cryptographic LSB steganography with SHA-256 integrity verification.",
+        "category": "write",
+        "parameters": {
+            "image_data": {"type": "string", "description": "Base64 data URI or local image path"},
+            "message": {"type": "string", "description": "Secret payload text to embed"},
+            "password": {"type": "string", "description": "Optional passphrase for encryption", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "steganography_decode_payload": {
+        "description": "Extract hidden secret message from a steganographic carrier image.",
+        "category": "read",
+        "parameters": {
+            "image_data": {"type": "string", "description": "Base64 data URI or local image path"},
+            "password": {"type": "string", "description": "Optional passphrase if encrypted", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "create_reminder": {
+        "description": "Create a new reminder with title and scheduled due time.",
+        "category": "personal_assistant",
+        "parameters": {
+            "title": {"type": "string", "description": "Title or task of the reminder"},
+            "due_time": {"type": "string", "description": "Due time or date (e.g. 'Tomorrow at 9 AM', 'In 30 minutes')", "default": "Soon"},
+            "priority": {"type": "string", "description": "Priority: LOW, NORMAL, HIGH, URGENT", "default": "NORMAL"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "list_reminders": {
+        "description": "List active and upcoming reminders.",
+        "category": "personal_assistant",
+        "parameters": {
+            "include_completed": {"type": "boolean", "description": "Include completed reminders", "default": False}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "create_note": {
+        "description": "Save a persistent personal note with title and body.",
+        "category": "personal_assistant",
+        "parameters": {
+            "title": {"type": "string", "description": "Note title"},
+            "content": {"type": "string", "description": "Note text content"},
+            "tags": {"type": "array", "description": "Optional tags", "default": []}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_notes": {
+        "description": "Search personal saved notes by title or content.",
+        "category": "personal_assistant",
+        "parameters": {
+            "query": {"type": "string", "description": "Search keyword or phrase"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "add_todo_item": {
+        "description": "Add a task to the user's to-do checklist.",
+        "category": "personal_assistant",
+        "parameters": {
+            "task": {"type": "string", "description": "Task description"},
+            "priority": {"type": "string", "description": "Priority: LOW, NORMAL, HIGH", "default": "NORMAL"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "list_todo_items": {
+        "description": "List tasks from the to-do list.",
+        "category": "personal_assistant",
+        "parameters": {
+            "include_completed": {"type": "boolean", "description": "Include finished tasks", "default": True}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "store_user_memory": {
+        "description": "Store a user-controlled long-term memory fact or user preference.",
+        "category": "personal_assistant",
+        "parameters": {
+            "key": {"type": "string", "description": "Memory key name"},
+            "value": {"type": "string", "description": "Memory fact or value"},
+            "category": {"type": "string", "description": "Category: preference, schedule, contact, fact", "default": "preference"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "list_user_memories": {
+        "description": "List all stored user memories and recalled context.",
+        "category": "personal_assistant",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_workspace_files": {
+        "description": "Search for files safely within the authorized project directory without path traversal.",
+        "category": "system",
+        "parameters": {
+            "query": {"type": "string", "description": "File name or extension to search"},
+            "max_results": {"type": "integer", "description": "Maximum number of file matches", "default": 15}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "launch_approved_application": {
+        "description": "Launch an approved desktop application from the whitelist without arbitrary shell execution.",
+        "category": "system",
+        "parameters": {
+            "app_name": {"type": "string", "description": "Application name: notepad, calculator, paint, explorer, taskmgr"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
     }
 }
 
@@ -961,6 +1083,121 @@ def execute_disconnect_endpoint_device(db: sqlite3.Connection, params: Dict[str,
         "message": f"Device '{dev_id}' has been disconnected from dashboard synchronization."
     }
 
+
+def execute_steganography_inspect_image(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    image_data = params.get("image_data")
+    if not image_data:
+        return {"error": "Missing required parameter 'image_data'."}
+    try:
+        res = inspect_image_and_exif(image_data)
+        record_audit_entry(
+            db=db,
+            actor="jarvis_user",
+            action="STEGANOGRAPHY_INSPECT",
+            resource="image_carrier",
+            details={
+                "decision": "ALLOW",
+                "reason": "User requested image steganography and EXIF inspection.",
+                "forensic_status": res.get("forensic_status"),
+                "risk_factors": res.get("risk_factors")
+            }
+        )
+        return res
+    except Exception as e:
+        return {"error": f"Failed to inspect image: {str(e)}"}
+
+
+def execute_steganography_encode_payload(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    image_data = params.get("image_data")
+    message = params.get("message")
+    password = params.get("password") or None
+    if not image_data or not message:
+        return {"error": "Missing required parameters 'image_data' and 'message'."}
+    try:
+        res = encode_stego_message(image_data, message, password=password)
+        record_audit_entry(
+            db=db,
+            actor="jarvis_user",
+            action="STEGANOGRAPHY_ENCODE",
+            resource="image_carrier",
+            details={
+                "decision": "ALLOW",
+                "reason": "User encoded secret payload into image carrier.",
+                "payload_sha256": res.get("payload_sha256"),
+                "bytes_used": res.get("payload_bytes_used")
+            }
+        )
+        return res
+    except Exception as e:
+        return {"error": f"Failed to encode stego message: {str(e)}"}
+
+
+def execute_steganography_decode_payload(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    image_data = params.get("image_data")
+    password = params.get("password") or None
+    if not image_data:
+        return {"error": "Missing required parameter 'image_data'."}
+    try:
+        res = decode_stego_message(image_data, password=password)
+        record_audit_entry(
+            db=db,
+            actor="jarvis_user",
+            action="STEGANOGRAPHY_DECODE",
+            resource="image_carrier",
+            details={
+                "decision": "ALLOW",
+                "reason": "User extracted payload from steganographic carrier.",
+                "detected": res.get("detected"),
+                "format": res.get("format")
+            }
+        )
+        return res
+    except Exception as e:
+        return {"error": f"Failed to decode stego message: {str(e)}"}
+
+def execute_create_reminder(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    return create_reminder(u_id, params.get("title", ""), params.get("due_time"), params.get("priority", "NORMAL"))
+
+def execute_list_reminders(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    rems = list_reminders(u_id, params.get("include_completed", False))
+    return {"reminders": rems, "count": len(rems)}
+
+def execute_create_note(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    return create_note(u_id, params.get("title", "Untitled Note"), params.get("content", ""), params.get("tags", []))
+
+def execute_search_notes(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    notes = search_notes(u_id, params.get("query", ""))
+    return {"notes": notes, "query": params.get("query", ""), "count": len(notes)}
+
+def execute_add_todo_item(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    return add_todo_item(u_id, params.get("task", ""), params.get("priority", "NORMAL"))
+
+def execute_list_todo_items(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    items = list_todo_items(u_id, params.get("include_completed", True))
+    return {"todos": items, "count": len(items)}
+
+def execute_store_user_memory(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    return store_user_memory(u_id, params.get("key", ""), params.get("value", ""), params.get("category", "preference"))
+
+def execute_list_user_memories(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u_id = user.get("username", "admin") if user else "admin"
+    mems = list_user_memories(u_id)
+    return {"memories": mems, "count": len(mems)}
+
+def execute_search_workspace_files(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return search_workspace_files(params.get("query", ""), max_results=params.get("max_results", 15))
+
+def execute_launch_approved_application(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    role = user.get("role", "operator") if user else "operator"
+    return launch_approved_application(params.get("app_name", ""), user_role=role)
+
 # Mapping of tool names to their execution functions
 TOOL_HANDLERS = {
     "get_security_dashboard_metrics": execute_get_security_dashboard_metrics,
@@ -991,7 +1228,20 @@ TOOL_HANDLERS = {
     "get_device_security_alerts": execute_get_device_security_alerts,
     "get_endpoint_firewall_status": execute_get_endpoint_firewall_status,
     "pause_endpoint_monitoring": execute_pause_endpoint_monitoring,
-    "disconnect_endpoint_device": execute_disconnect_endpoint_device
+    "disconnect_endpoint_device": execute_disconnect_endpoint_device,
+    "steganography_inspect_image": execute_steganography_inspect_image,
+    "steganography_encode_payload": execute_steganography_encode_payload,
+    "steganography_decode_payload": execute_steganography_decode_payload,
+    "create_reminder": execute_create_reminder,
+    "list_reminders": execute_list_reminders,
+    "create_note": execute_create_note,
+    "search_notes": execute_search_notes,
+    "add_todo_item": execute_add_todo_item,
+    "list_todo_items": execute_list_todo_items,
+    "store_user_memory": execute_store_user_memory,
+    "list_user_memories": execute_list_user_memories,
+    "search_workspace_files": execute_search_workspace_files,
+    "launch_approved_application": execute_launch_approved_application
 }
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
@@ -1002,7 +1252,12 @@ def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any
 
     with connect() as db:
         try:
-            result = handler(db, arguments)
+            import inspect
+            sig = inspect.signature(handler)
+            if "user" in sig.parameters:
+                result = handler(db, arguments, user=user)
+            else:
+                result = handler(db, arguments)
             return result
         except Exception as e:
             return {"error": f"Execution error in tool '{tool_name}': {str(e)}"}

@@ -37,7 +37,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "") or SECRET_VAULT.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "") or SECRET_VAULT.get("ANTHROPIC_API_KEY", "")
 
-SYSTEM_PROMPT = """You are AMOJA AI, an elite autonomous female AI cybersecurity assistant defending the AgentShield platform.
+SYSTEM_PROMPT = """You are AMOJA, a multilingual conversational assistant. Always respond in the same language and writing style as the user's latest message. Support Hindi, Hinglish, Marathi, English, and natural combinations of these languages. Detect language per turn and switch immediately when the user switches. Do not translate into English unless asked. Keep responses natural, friendly, and conversational. Preserve this behavior when using tools or discussing cybersecurity.
 Your core mission is Zero-Trust verification: "Who Controls the AI?"
 Tone: Crisp, authoritative, respectful, highly competent, calm, articulate, and protective.
 Guidelines:
@@ -48,10 +48,10 @@ Guidelines:
 5. Keep your spoken voice responses concise (1-3 sentences) suitable for speech synthesis. Provide structured evidence in the text.
 """
 
-def detect_language(text: str, requested_lang: JarvisLanguage) -> str:
-    """Detects whether user prompt is English, Hindi, Marathi, or Hinglish."""
+def detect_language(text: str, requested_lang: JarvisLanguage, session_lang: Optional[str] = None) -> str:
+    """Detects whether user prompt is English, Hindi, Marathi, or Hinglish per turn from text."""
     req_val = requested_lang.value if hasattr(requested_lang, "value") else str(requested_lang)
-    return detect_language_core(text, user_preference=req_val)
+    return detect_language_core(text, user_preference=req_val, session_lang=session_lang)
 
 def match_command_intent(
     user_prompt: str,
@@ -188,6 +188,57 @@ def match_command_intent(
         if target_name not in {"the", "an", "all", "this", "it"}:
             return "prepare_kill_switch", {"agent_id": target_name, "reason": f"Voice/text command: '{user_prompt}'"}, "Agents"
 
+    # --- Personal Assistant & Productivity Commands ---
+    # 1. Reminders
+    if any(phrase in p for phrase in ["remind me to", "set a reminder", "create reminder", "remind me", "add reminder"]):
+        rem_title = re.sub(r"^(?:please\s+)?(?:remind\s+me\s+to|set\s+a\s+reminder\s+(?:for|to)?|create\s+reminder|remind\s+me|add\s+reminder)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "create_reminder", {"title": rem_title or "Review tasks", "due_time": "Soon"}, None
+
+    if any(phrase in p for phrase in ["show my reminders", "list reminders", "what are my reminders", "my reminders", "reminders dikhao"]):
+        return "list_reminders", {"include_completed": False}, None
+
+    # 2. Notes
+    if any(phrase in p for phrase in ["take a note", "save note", "create note", "write note", "note down", "ek note likho"]):
+        note_content = re.sub(r"^(?:please\s+)?(?:take\s+a\s+note(?:\s+that|:)?|save\s+note(?:\s+that|:)?|create\s+note|write\s+note|note\s+down|ek\s+note\s+likho)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "create_note", {"title": note_content[:30] or "Quick Note", "content": note_content or "Note"}, None
+
+    if any(phrase in p for phrase in ["search my notes", "find note", "search notes", "show my notes", "list notes", "notes dikhao"]):
+        q = re.sub(r"^(?:search\s+(?:my\s+)?notes\s+(?:for\s+)?|find\s+note\s+|show\s+(?:my\s+)?notes|list\s+notes|notes\s+dikhao)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "search_notes", {"query": q}, None
+
+    # 3. To-Do Items
+    if any(phrase in p for phrase in ["add to my todo", "add todo", "add task", "new todo", "todo mein add karo"]):
+        task_desc = re.sub(r"^(?:please\s+)?(?:add\s+to\s+(?:my\s+)?todo(?:\s+list)?(?:\s+that|:)?|add\s+todo|add\s+task|new\s+todo|todo\s+mein\s+add\s+karo)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "add_todo_item", {"task": task_desc or "New task", "priority": "NORMAL"}, None
+
+    if any(phrase in p for phrase in ["show my todo", "list todos", "what is on my todo", "my todo list", "todo list dikhao", "tasks dikhao"]):
+        return "list_todo_items", {"include_completed": True}, None
+
+    # 4. User Memory
+    if any(phrase in p for phrase in ["remember that", "save to memory", "store memory", "remember this", "yaad rakho"]):
+        mem_text = re.sub(r"^(?:please\s+)?(?:remember\s+that|save\s+to\s+memory|store\s+memory|remember\s+this|yaad\s+rakho)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "store_user_memory", {"key": mem_text[:30] or "custom_fact", "value": mem_text}, None
+
+    if any(phrase in p for phrase in ["what do you remember", "list memories", "show memories", "stored memories", "kya yaad hai"]):
+        return "list_user_memories", {}, None
+
+    # 5. Safe Scoped Workspace File search
+    if any(phrase in p for phrase in ["search file", "find file", "look for file", "file dhundo", "search workspace"]):
+        f_query = re.sub(r"^(?:please\s+)?(?:search\s+file|find\s+file|look\s+for\s+file|file\s+dhundo|search\s+workspace(?:\s+for)?)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "search_workspace_files", {"query": f_query or "agent"}, None
+
+    # 6. Approved application launcher (Zero-Trust Whitelist)
+    if any(phrase in p for phrase in ["open notepad", "launch notepad", "start notepad", "notepad kholo"]):
+        return "launch_approved_application", {"app_name": "notepad"}, None
+    if any(phrase in p for phrase in ["open calculator", "launch calculator", "open calc", "calculator kholo"]):
+        return "launch_approved_application", {"app_name": "calculator"}, None
+    if any(phrase in p for phrase in ["open paint", "launch paint", "paint kholo"]):
+        return "launch_approved_application", {"app_name": "paint"}, None
+    if any(phrase in p for phrase in ["open explorer", "open file explorer", "launch explorer", "files kholo"]):
+        return "launch_approved_application", {"app_name": "explorer"}, None
+    if any(phrase in p for phrase in ["open task manager", "launch task manager", "open taskmgr"]):
+        return "launch_approved_application", {"app_name": "taskmgr"}, None
+
     # Navigation keywords
     nav_map = {
         "overview": "Overview",
@@ -319,7 +370,7 @@ def synthesize_response_nlp(
         incs = tool_result_data.get("open_incidents", [])
         events = tool_result_data.get("blocked_and_critical_events", [])
         inc_str = "\n".join([f"- **[{i['severity']}] {i['incident_number']}:** {i['title']} (Agent: `{i.get('agent_id')}`)" for i in incs[:5]]) or "No critical incidents logged."
-        
+
         if lang == "mr":
             text = (
                 f"🚨 **गंभीर धोके आणि सुरक्षा घटना (Critical Threats & Incidents):**\n\n"
@@ -327,13 +378,20 @@ def synthesize_response_nlp(
                 f"पॉलिसी गेटवेवर {len(events)} नुकतेच ब्लॉक केलेले उच्च-धोक्याचे इव्हेंट्स आढळले."
             )
             speech = f"गंभीर धोके दाखवत आहे. सध्या {len(incs)} सक्रिय सुरक्षा घटना आणि {len(events)} ब्लॉक केलेले हल्ले आहेत."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = (
+                f"🚨 **गंभीर खतरे और खुली सुरक्षा घटनाएं (Critical Threats & Incidents):**\n\n"
+                f"{inc_str}\n\n"
+                f"पॉलिसी गेटवे पर {len(events)} हाल ही में रोकी गई उच्च-जोखिम घटनाएं पाई गईं."
+            )
+            speech = f"गंभीर खतरे दिखाए जा रहे हैं. वर्तमान में {len(incs)} खुली घटनाएं और {len(events)} ब्लॉक किए गए हमले दर्ज हैं."
+        elif lang == "hinglish":
             text = (
                 f"🚨 **Critical Threats & Open Incidents:**\n\n"
                 f"{inc_str}\n\n"
-                f"Found {len(events)} recent blocked high-risk events at the policy gateway."
+                f"Policy gateway par {len(events)} recent blocked high-risk events mile hain."
             )
-            speech = f"Displaying critical threats. There are {len(incs)} open incidents and {len(events)} blocked attacks requiring review."
+            speech = f"Critical threats show kar rahi hoon. Total {len(incs)} open incidents aur {len(events)} blocked attacks hain jinhe review karna zaroori hai."
         else:
             text = (
                 f"🚨 **Critical Threat Triage & Incident Overview:**\n\n"
@@ -349,7 +407,7 @@ def synthesize_response_nlp(
         top_agent = top_risk[0] if top_risk else None
 
         agent_str = "\n".join([f"- **{a['name']}** (`{a['id']}`): Risk Score **{a['risk_score']}/100**, Trust **{a['trust_score']}/100** [{a['status']}]" for a in top_risk[:5]])
-        
+
         if lang == "mr":
             if top_agent and top_agent.get("risk_score", 0) > 60:
                 highlight = f"एजंट **{top_agent['name']}** (`{top_agent['id']}`) चा रिस्क स्कोर सर्वात जास्त आहे: **{top_agent['risk_score']}/100**."
@@ -359,6 +417,32 @@ def synthesize_response_nlp(
                 speech = "सर्व एजंट्स सामान्य मर्यादेत कार्यरत आहेत. संपूर्ण यादी स्क्रीनवर आहे."
             text = (
                 f"🤖 **AI एजंट सुरक्षा यादी (Agent Security Roster):**\n\n"
+                f"{highlight}\n\n"
+                f"{agent_str}"
+            )
+            return text, speech
+        elif lang == "hi":
+            if top_agent and top_agent.get("risk_score", 0) > 60:
+                highlight = f"एजेंट **{top_agent['name']}** (`{top_agent['id']}`) का जोखिम स्कोर सबसे अधिक है: **{top_agent['risk_score']}/100**."
+                speech = f"एजेंट {top_agent['name']} का रिस्क स्कोर सबसे ज्यादा यानी {top_agent['risk_score']} है. पूरी सूची स्क्रीन पर प्रदर्शित है."
+            else:
+                highlight = "सभी एजेंट वर्तमान में सामान्य जोखिम सीमा में कार्य कर रहे हैं."
+                speech = "सभी एजेंट्स सामान्य सीमा में काम कर रहे हैं. पूरी सूची स्क्रीन पर है."
+            text = (
+                f"🤖 **AI एजेंट सुरक्षा सूची (Agent Security Roster):**\n\n"
+                f"{highlight}\n\n"
+                f"{agent_str}"
+            )
+            return text, speech
+        elif lang == "hinglish":
+            if top_agent and top_agent.get("risk_score", 0) > 60:
+                highlight = f"Agent **{top_agent['name']}** (`{top_agent['id']}`) ka risk score sabse highest hai: **{top_agent['risk_score']}/100**."
+                speech = f"Agent {top_agent['name']} ka risk score sabse zyada {top_agent['risk_score']} hai. Complete roster screen par display kar diya hai."
+            else:
+                highlight = "Sabhi monitored agents nominal risk threshold mein operate kar rahe hain."
+                speech = "Sabhi agents safely operate kar rahe hain. Complete agent list screen par hai."
+            text = (
+                f"🤖 **AI Agent Security Roster:**\n\n"
                 f"{highlight}\n\n"
                 f"{agent_str}"
             )
@@ -392,6 +476,32 @@ def synthesize_response_nlp(
                 )
                 speech = f"{len(items)} प्रॉम्प्ट इंजेक्शन प्रयत्न शोधून काढले आणि गेटवेवर सुरक्षितपणे निष्प्रभ केले."
             return text, speech
+        elif lang == "hi":
+            if not items:
+                text = "🛡️ **प्रॉम्प्ट इंजेक्शन स्कैनर:** हाल के लॉग में कोई सक्रिय प्रॉम्प्ट इंजेक्शन हमला नहीं मिला."
+                speech = "कोई प्रॉम्प्ट इंजेक्शन प्रयास नहीं पाया गया."
+            else:
+                formatted = "\n".join([f"- **इवेंट #{it['id']} ({it.get('agent_id', 'unknown')}):** {it['reason']} लक्ष्य: `{it['target']}` [निर्णय: {it['decision']}]" for it in items[:4]])
+                text = (
+                    f"🛡️ **प्रॉम्प्ट इंजेक्शन एवं विरोधी हमले (Prompt Injection Telemetry):**\n\n"
+                    f"AgentShield ने **{len(items)}** प्रॉम्प्ट इंजेक्शन हस्ताक्षरों को पकड़कर निष्क्रिय किया:\n\n"
+                    f"{formatted}"
+                )
+                speech = f"{len(items)} प्रॉम्प्ट इंजेक्शन प्रयास पकड़े गए और गेटवे पर सुरक्षित रूप से रोक दिए गए."
+            return text, speech
+        elif lang == "hinglish":
+            if not items:
+                text = "🛡️ **Prompt Injection Scanner:** Recent logs mein koi prompt injection attempt nahi mila."
+                speech = "Koi prompt injection attempt detect nahi hua. Sab safe hai."
+            else:
+                formatted = "\n".join([f"- **Event #{it['id']} ({it.get('agent_id', 'unknown')}):** {it['reason']} on `{it['target']}` [Decision: {it['decision']}]" for it in items[:4]])
+                text = (
+                    f"🛡️ **Prompt Injection & Adversarial Attack Telemetry:**\n\n"
+                    f"AgentShield ne **{len(items)}** prompt injection signatures intercept aur neutralize kiye:\n\n"
+                    f"{formatted}"
+                )
+                speech = f"{len(items)} prompt injection attempts detect kiye gaye aur policy gateway par intercept ho gaye hain."
+            return text, speech
         else:
             if not items:
                 text = "🛡️ **Prompt Injection Scanner:** No active prompt injection detections found in recent logs."
@@ -420,6 +530,32 @@ def synthesize_response_nlp(
                     f"{formatted}"
                 )
                 speech = f"डीएलपी प्रणालीने {len(items)} संवेदनशील डेटा चोरीचे प्रयत्न अडवले आहेत."
+            return text, speech
+        elif lang == "hi":
+            if not items:
+                text = "🔒 **डेटा लॉस प्रिवेंशन (DLP):** कोई डेटा लीक या क्रेडेंशियल रिसाव नहीं मिला."
+                speech = "डीएलपी मॉनिटर में कोई सक्रिय डेटा या क्रेडेंशियल लीक नहीं मिला."
+            else:
+                formatted = "\n".join([f"- **इवेंट #{it['id']} ({it.get('agent_id', 'unknown')}):** {it['reason']} लक्ष्य: `{it['target']}`" for it in items[:4]])
+                text = (
+                    f"🔒 **DLP एवं डेटा सुरक्षा मॉनिटर:**\n\n"
+                    f"डेटा लीक के **{len(items)}** प्रयास पकड़े और रोके गए:\n\n"
+                    f"{formatted}"
+                )
+                speech = f"डीएलपी सिस्टम ने {len(items)} डेटा चोरी के प्रयास सुरक्षित रूप से रोक दिए हैं."
+            return text, speech
+        elif lang == "hinglish":
+            if not items:
+                text = "🔒 **Data Loss Prevention (DLP):** Koi sensitive data leak ya credential exfiltration detect nahi hua."
+                speech = "DLP monitors show zero active credential leaks or unauthorized data egress."
+            else:
+                formatted = "\n".join([f"- **Event #{it['id']} ({it.get('agent_id', 'unknown')}):** {it['reason']} targeting `{it['target']}`" for it in items[:4]])
+                text = (
+                    f"🔒 **DLP & Secret Exfiltration Monitor:**\n\n"
+                    f"Detected **{len(items)}** sensitive data exposure attempts:\n\n"
+                    f"{formatted}"
+                )
+                speech = f"DLP engine ne {len(items)} sensitive data exfiltration attempts intercept kiye hain. Safe masking applied."
             return text, speech
         else:
             if not items:
@@ -687,7 +823,14 @@ def synthesize_response_nlp(
     # --- Endpoint Security Platform Tools ---
     if tool_name == "get_device_security_status":
         if tool_result_data.get("error"):
-            return f"❌ **Device Query Error:** {tool_result_data['error']}", "No enrolled device found. Please enroll your computer first."
+            if lang == "mr":
+                return f"❌ **डिव्हाइस त्रुटी:** {tool_result_data['error']}", "कोणतेही नोंदणीकृत डिव्हाइस आढळले नाही. कृपया आधी तुमचा संगणक नोंदणीकृत करा."
+            elif lang == "hi":
+                return f"❌ **डिवाइस त्रुटि:** {tool_result_data['error']}", "कोई नामांकित डिवाइस नहीं मिला. कृपया पहले अपना कंप्यूटर नामांकित करें."
+            elif lang == "hinglish":
+                return f"❌ **Device Query Error:** {tool_result_data['error']}", "Koi enrolled device nahi mila. Please pehle apna computer enroll karein."
+            else:
+                return f"❌ **Device Query Error:** {tool_result_data['error']}", "No enrolled device found. Please enroll your computer first."
 
         dev_name = tool_result_data.get("device_name", "Local PC")
         os_info = tool_result_data.get("os", "Unknown OS")
@@ -699,10 +842,79 @@ def synthesize_response_nlp(
         health = tool_result_data.get("latest_health") or {}
         cpu = health.get("cpu_percent", 0.0)
         mem = health.get("memory_percent", 0.0)
+        disk = health.get("disk_percent", 0.0)
 
+        # Check if the user is asking about slow performance / speed
+        prompt_lower = (user_prompt or "").lower()
+        is_slow_query = any(k in prompt_lower for k in ["slow", "धीमा", "धीमे", "मंद", "lag", "hang", "speed"])
+
+        if is_slow_query:
+            if lang == "mr":
+                text = (
+                    f"💻 **संगणक कार्यक्षमता आणि वेग निदान अहवाल ({dev_name}):**\n\n"
+                    f"आपला लॅपटॉप/संगणक मंद चालण्याची संभाव्य कारणे आणि थेट टेलिमेट्री:\n"
+                    f"- **CPU वापर:** {cpu}%\n"
+                    f"- **मेमरी (RAM) वापर:** {mem}%\n"
+                    f"- **डिस्क वापर:** {disk}%\n"
+                    f"- **सुरक्षा अलर्ट्स:** {alerts} सक्रिय अलर्ट्स\n"
+                    f"- **होस्ट फायरवॉल:** {fw.get('type', 'Firewall')} ({fw_state})\n\n"
+                    f"**निदान आणि शिफारसी:**\n"
+                    f"1. जास्त CPU किंवा मेमरी वापरणाऱ्या पार्श्वभूमी प्रक्रियांवर लक्ष ठेवा.\n"
+                    f"2. संशयास्पद नेटवर्क हालचाली तपासण्यासाठी 'संशयास्पद कनेक्शन तपासा' म्हणा.\n"
+                    f"3. अनावश्यक स्टार्टअप ॲप्स बंद करा आणि डिस्क जागा रिकामी करा."
+                )
+                speech = f"आपल्या संगणकाचा सद्य CPU वापर {cpu} टक्के आणि मेमरी {mem} टक्के आहे. जास्त रिसोर्स वापर किंवा पार्श्वभूमी प्रक्रिया लॅपटॉप मंद चालण्याचे कारण असू शकते. तपशील स्क्रीनवर दाखवले आहेत."
+            elif lang == "hi":
+                text = (
+                    f"💻 **कंप्यूटर परफॉरमेंस एवं डायग्नोस्टिक रिपोर्ट ({dev_name}):**\n\n"
+                    f"आपके कंप्यूटर के धीमे चलने के मुख्य कारण और वर्तमान टेलीमेट्री:\n"
+                    f"- **CPU लोड:** {cpu}%\n"
+                    f"- **मेमोरी (RAM) उपयोग:** {mem}%\n"
+                    f"- **डिस्क उपयोग:** {disk}%\n"
+                    f"- **सक्रिय सुरक्षा अलर्ट्स:** {alerts} अलर्ट्स\n"
+                    f"- **होस्ट फ़ायरवॉल:** {fw.get('type', 'Firewall')} ({fw_state})\n\n"
+                    f"**सुझाव एवं निवारण:**\n"
+                    f"1. टास्क मैनेजर में जाकर देखें कि कौन-सा बैकग्राउंड प्रोग्राम अत्यधिक CPU या RAM ले रहा है.\n"
+                    f"2. अवांछित बैकग्राउंड कनेक्शन या मैलवेयर की जांच के लिए 'संदिग्ध कनेक्शन चेक करो' निर्देश दें.\n"
+                    f"3. अनावश्यक स्टार्टअप ऐप्स को डिसेबल करें."
+                )
+                speech = f"आपके कंप्यूटर का वर्तमान सीपीयू लोड {cpu} प्रतिशत और मेमोरी उपयोग {mem} प्रतिशत है. धीमे चलने का कारण बैकग्राउंड में चल रहे भारी प्रोग्राम्स या उच्च रिसोर्स उपयोग हो सकता है. मैंने विस्तृत रिपोर्ट स्क्रीन पर दिखा दी है."
+            elif lang == "hinglish":
+                text = (
+                    f"💻 **Computer Performance & Diagnostic Telemetry ({dev_name}):**\n\n"
+                    f"Aapke computer ke slow chalne ke primary factors aur current live metrics:\n"
+                    f"- **CPU Utilization:** {cpu}%\n"
+                    f"- **RAM Usage:** {mem}%\n"
+                    f"- **Disk Pressure:** {disk}%\n"
+                    f"- **Active Alerts:** {alerts} unresolved alerts\n"
+                    f"- **Host Firewall:** {fw.get('type', 'Firewall')} ({fw_state})\n\n"
+                    f"**Recommendations:**\n"
+                    f"1. High CPU/RAM consumption check karne ke liye task manager mein background apps inspect karein.\n"
+                    f"2. Crypto-miners ya unauthorized egress inspect karne ke liye 'check suspicious connections' bolein.\n"
+                    f"3. Unnecessary startup applications disable karein."
+                )
+                speech = f"Aapke computer ka current CPU load {cpu} percent aur RAM usage {mem} percent hai. Heavy background workloads ya open alerts iske slow chalne ka reason ho sakte hain."
+            else:
+                text = (
+                    f"💻 **Endpoint Performance & Diagnostic Telemetry ({dev_name}):**\n\n"
+                    f"Live system metrics and primary diagnostic factors for observed latency:\n"
+                    f"- **CPU Utilization:** {cpu}%\n"
+                    f"- **Memory (RAM) Usage:** {mem}%\n"
+                    f"- **Storage Disk Usage:** {disk}%\n"
+                    f"- **Open Security Alerts:** {alerts} unresolved alert(s)\n"
+                    f"- **Host Firewall:** {fw.get('type', 'Firewall')} ({fw_state})\n\n"
+                    f"**Diagnostic Recommendations:**\n"
+                    f"1. Identify background processes consuming abnormal CPU or RAM cycles.\n"
+                    f"2. Audit network egress for hidden exfiltration using 'check suspicious connections'.\n"
+                    f"3. Review startup applications and clean temporary storage."
+                )
+                speech = f"Your system currently shows {cpu}% CPU load and {mem}% memory utilization. Heavy background workloads or active alerts could be causing performance degradation."
+            return text, speech
+
+        # Standard Device / Laptop Security Status
         if lang == "mr":
             text = (
-                f"🛡️ **डिव्हाइस सुरक्षा स्थिती (Device Security Status):**\n\n"
+                f"🛡️ **डिव्हाइस आणि लॅपटॉप सुरक्षा स्थिती (Laptop Security Status):**\n\n"
                 f"- **डिव्हाइस नाव:** `{dev_name}` ({os_info})\n"
                 f"- **आयपी पत्ता:** `{ip}` | **एजंट आवृत्ती:** `{tool_result_data.get('agent_version', '1.2.0')}`\n"
                 f"- **मॉनिटरिंग स्थिती:** `{m_status}`\n"
@@ -711,19 +923,31 @@ def synthesize_response_nlp(
                 f"- **सिस्टम भार:** CPU: {cpu}%, Memory: {mem}%\n"
                 f"- **परवानग्या:** {len(tool_result_data.get('granted_permissions', []))} मंजूर, {len(tool_result_data.get('withheld_permissions', []))} राखून ठेवल्या."
             )
-            speech = f"या डिव्हाइसची सुरक्षा स्थिती {m_status} आहे. होस्ट फायरवॉल {fw_state} आहे आणि {alerts} अलर्ट्स नोंदवले गेले आहेत."
-        elif lang in ["hi", "hinglish"]:
+            speech = f"आपल्या लॅपटॉपची सुरक्षा स्थिती {m_status} आहे. होस्ट फायरवॉल {fw_state} आहे आणि {alerts} सुरक्षा अलर्ट्स आहेत. सर्व सुरक्षा नियंत्रणे सुरळीत आहेत."
+        elif lang == "hi":
             text = (
-                f"🛡️ **Device Security Status (डिवाइस सुरक्षा स्थिति):**\n\n"
-                f"- **Device:** `{dev_name}` ({os_info})\n"
+                f"🛡️ **डिवाइस एवं सिस्टम सुरक्षा स्थिति (System Security Status):**\n\n"
+                f"- **डिवाइस का नाम:** `{dev_name}` ({os_info})\n"
+                f"- **आईपी पता:** `{ip}` | **एजेंट संस्करण:** `v{tool_result_data.get('agent_version', '1.2.0')}`\n"
+                f"- **मॉनिटरिंग स्थिति:** `{m_status}`\n"
+                f"- **होस्ट फ़ायरवॉल:** {fw.get('type', 'Firewall')} ({fw_state})\n"
+                f"- **सक्रिय सुरक्षा अलर्ट्स:** {alerts} अलर्ट्स दर्ज हैं\n"
+                f"- **सिस्टम लोड:** CPU: {cpu}%, RAM: {mem}%\n"
+                f"- **अनुमतियाँ:** {len(tool_result_data.get('granted_permissions', []))} स्वीकृत, {len(tool_result_data.get('withheld_permissions', []))} आरक्षित"
+            )
+            speech = f"आपके सिस्टम की सुरक्षा स्थिति {m_status} है. होस्ट फ़ायरवॉल {fw_state} है और {alerts} सुरक्षा अलर्ट्स दर्ज हैं. सभी सुरक्षा प्रणालियाँ सुरक्षित हैं."
+        elif lang == "hinglish":
+            text = (
+                f"🛡️ **Device & System Security Status ({dev_name}):**\n\n"
+                f"- **Device Identity:** `{dev_name}` ({os_info})\n"
                 f"- **IP Address:** `{ip}` | **Agent:** `v{tool_result_data.get('agent_version', '1.2.0')}`\n"
                 f"- **Monitoring State:** `{m_status}`\n"
                 f"- **Host Firewall:** {fw.get('type', 'Firewall')} ({fw_state})\n"
                 f"- **Open Alerts:** {alerts} unresolved alert(s)\n"
                 f"- **Resource Usage:** CPU: {cpu}%, RAM: {mem}%\n"
-                f"- **Consent Profile:** {len(tool_result_data.get('granted_permissions', []))} granted, {len(tool_result_data.get('withheld_permissions', []))} withheld"
+                f"- **Permissions Consent:** {len(tool_result_data.get('granted_permissions', []))} granted, {len(tool_result_data.get('withheld_permissions', []))} withheld"
             )
-            speech = f"Is device ki security status {m_status} hai. Host firewall {fw_state} hai aur {alerts} active alerts hain."
+            speech = f"Aapke system ki security status {m_status} hai. Host firewall {fw_state} hai aur {alerts} open alerts hain. Zero-Trust defenses active hain."
         else:
             text = (
                 f"🛡️ **Personal Device Security Status:**\n\n"
@@ -747,9 +971,12 @@ def synthesize_response_nlp(
             if lang == "mr":
                 text = f"✅ **कोणतेही संशयास्पद कनेक्शन आढळले नाही:** तपासलेल्या सर्व {total} नेटवर्क सॉकेट्स सामान्य आणि सुरक्षित आहेत. कोणताही रिव्हर्स शेल किंवा असामान्य पोर्ट सक्रिय नाही."
                 speech = "तुमच्या कॉम्प्युटरवर कोणतेही संशयास्पद कनेक्शन आढळले नाही. सर्व सॉकेट्स सुरक्षित आहेत."
-            elif lang in ["hi", "hinglish"]:
+            elif lang == "hi":
+                text = f"✅ **कोई संदिग्ध कनेक्शन नहीं मिला:** जांचे गए सभी {total} सक्रिय सॉकेट्स सुरक्षित हैं. कोई रिवर्स शेल या अनधिकृत आउटबाउंड कनेक्शन नहीं मिला."
+                speech = "आपके कंप्यूटर पर कोई संदिग्ध कनेक्शन नहीं है. सभी नेटवर्क कनेक्शन्स सामान्य और सुरक्षित हैं."
+            elif lang == "hinglish":
                 text = f"✅ **No Suspicious Connections:** Checked {total} active socket connections. Koi bhi suspicious outbound connection ya reverse shell port detect nahi hua."
-                speech = "Aapke computer par koi suspicious connection nahi hai. All network connections are normal."
+                speech = "Aapke computer par koi suspicious connection nahi hai. All network connections are normal and safe."
             else:
                 text = f"✅ **All Monitored Sockets Clean:** Inspected {total} active network connections. No abnormal outbound egress or unauthorized listener ports detected."
                 speech = f"No suspicious network connections detected on this machine, {user_name}."
@@ -767,13 +994,20 @@ def synthesize_response_nlp(
                 f"📌 *शिफारस: संबंधित प्रक्रियेची तपासणी करा आणि संशयित रिमोट आयपी तात्काळ ब्लॉक करा.*"
             )
             speech = f"सावधान. तुमच्या कॉम्प्युटरवर {len(susp_conns)} संशयास्पद कनेक्शन आढळले आहेत. कृपया स्क्रीनवरील तपशील तपासा."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = (
+                f"🚨 **संदिग्ध नेटवर्क कनेक्शन मिले ({len(susp_conns)}):**\n\n"
+                f"{items_str}\n\n"
+                f"📌 *कार्रवाई आवश्यक: प्रक्रिया पहचान (PID) की जांच करें और अनधिकृत प्रक्रियाओं को समाप्त करें.*"
+            )
+            speech = f"चेतावनी: आपके कंप्यूटर पर {len(susp_conns)} संदिग्ध नेटवर्क कनेक्शन मिले हैं. स्क्रीन पर विवरण देखें."
+        elif lang == "hinglish":
             text = (
                 f"🚨 **Suspicious Network Connections Detected ({len(susp_conns)}):**\n\n"
                 f"{items_str}\n\n"
                 f"📌 *Action Required: Inspect PID and consider terminating unauthorized processes.*"
             )
-            speech = f"Alert: Found {len(susp_conns)} suspicious network connection(s) on your computer."
+            speech = f"Alert: Found {len(susp_conns)} suspicious network connection(s) on your computer. Please check screen details."
         else:
             text = (
                 f"🚨 **Suspicious Endpoint Network Sockets Identified ({len(susp_conns)}):**\n\n"
@@ -789,9 +1023,12 @@ def synthesize_response_nlp(
             if lang == "mr":
                 text = "✅ **कोणतेही नवीन सुरक्षा अलर्ट नाहीत:** हे डिव्हाइस पूर्णपणे सुरक्षित आहे."
                 speech = "या डिव्हाइसवर कोणतेही नवीन सुरक्षा अलर्ट नाहीत."
-            elif lang in ["hi", "hinglish"]:
+            elif lang == "hi":
+                text = "✅ **कोई नया सुरक्षा अलर्ट नहीं है:** यह डिवाइस पूरी तरह सुरक्षित है."
+                speech = "इस डिवाइस पर कोई नया सुरक्षा अलर्ट नहीं है."
+            elif lang == "hinglish":
                 text = "✅ **No Open Security Alerts:** Aapke device par koi naya security alert nahi hai."
-                speech = "No new security alerts on this device."
+                speech = "No new security alerts on this device. All monitors green."
             else:
                 text = "✅ **No Open Endpoint Security Alerts:** Monitored system behavior is healthy."
                 speech = "No open security alerts on this device."
@@ -810,7 +1047,10 @@ def synthesize_response_nlp(
         if lang == "mr":
             text = f"🚨 **डिव्हाइस सुरक्षा अलर्ट्स ({len(alerts)}):**\n\n{items_str}"
             speech = f"डिव्हाइसवर {len(alerts)} नवीन सुरक्षा अलर्ट्स आढळले आहेत. स्क्रीनवर तपशील दाखवले आहेत."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = f"🚨 **डिवाइस सुरक्षा अलर्ट्स ({len(alerts)}):**\n\n{items_str}"
+            speech = f"डिवाइस के {len(alerts)} नए सुरक्षा अलर्ट मिले हैं. स्क्रीन पर विवरण देखें."
+        elif lang == "hinglish":
             text = f"🚨 **Endpoint Security Alerts ({len(alerts)}):**\n\n{items_str}"
             speech = f"Device ke {len(alerts)} new security alerts retrieve kiye gaye hain."
         else:
@@ -841,7 +1081,17 @@ def synthesize_response_nlp(
                 f"- **सक्रिय नियम:** {rules} नियम लागू केले आहेत."
             )
             speech = f"होस्ट फायरवॉल सध्या {'सक्रिय' if is_en else 'निष्क्रिय'} आहे. सर्व प्रोफाइल्स सुरक्षित आहेत."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = (
+                f"🔥 **होस्ट फ़ायरवॉल स्थिति (Host Firewall Status):**\n\n"
+                f"- **फ़ायरवॉल प्रकार:** `{fw_type}`\n"
+                f"- **स्थिति:** `{'सक्रिय (Active)' if is_en else 'निष्क्रिय (Disabled)'}`\n"
+                f"- **प्रोफ़ाइल:** {p_str}\n"
+                f"- **डिफ़ॉल्ट इनबाउंड:** `{inbound}` | **डिफ़ॉल्ट आउटबाउंड:** `{outbound}`\n"
+                f"- **सक्रिय नियम:** {rules} नियम लागू हैं."
+            )
+            speech = f"होस्ट फ़ायरवॉल वर्तमान में {'सक्रिय' if is_en else 'निष्क्रिय'} है. इनबाउंड डिफ़ॉल्ट नीति {inbound} है."
+        elif lang == "hinglish":
             text = (
                 f"🔥 **Host Firewall Status:**\n\n"
                 f"- **Type:** `{fw_type}`\n"
@@ -850,7 +1100,7 @@ def synthesize_response_nlp(
                 f"- **Default Policy:** Inbound `{inbound}`, Outbound `{outbound}`\n"
                 f"- **Active Rules:** {rules} monitored firewall rules"
             )
-            speech = f"Host firewall status is {'ACTIVE' if is_en else 'DISABLED'}. Inbound default is {inbound}."
+            speech = f"Host firewall status is {'ACTIVE' if is_en else 'DISABLED'}. Inbound default policy is {inbound}."
         else:
             text = (
                 f"🔥 **Host Firewall Configuration & State:**\n\n"
@@ -867,7 +1117,10 @@ def synthesize_response_nlp(
         if lang == "mr":
             text = "⏸️ **मॉनिटरिंग थांबवले:** या डिव्हाइसचे सुरक्षा मॉनिटरिंग तात्पुरते थांबवले आहे. टेलिमेट्री संकलन स्थगित केले आहे."
             speech = "डिव्हाइसचे सुरक्षा मॉनिटरिंग थांबवण्यात आले आहे."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = "⏸️ **मॉनिटरिंग रोक दी गई:** इस डिवाइस की सुरक्षा मॉनिटरिंग रोक दी गई है. टेलीमेट्री सिंक स्थगित है."
+            speech = "डिवाइस सुरक्षा मॉनिटरिंग रोक दी गई है."
+        elif lang == "hinglish":
             text = "⏸️ **Monitoring Paused:** Device security monitoring has been paused. Telemetry sync is suspended."
             speech = "Device security monitoring pause kar diya gaya hai."
         else:
@@ -879,7 +1132,10 @@ def synthesize_response_nlp(
         if lang == "mr":
             text = "🔌 **डिव्हाइस डिस्कनेक्ट केले:** हे उपकरण डॅशबोर्डवरून डिस्कनेक्ट झाले आहे. स्थानिक मॉनिटरिंग ऑफलाइन मोडमध्ये चालू राहील."
             speech = "डिव्हाइस डॅशबोर्डवरून डिस्कनेक्ट करण्यात आले आहे."
-        elif lang in ["hi", "hinglish"]:
+        elif lang == "hi":
+            text = "🔌 **डिवाइस डिस्कनेक्ट किया गया:** डिवाइस केंद्रीय डैशबोर्ड से डिस्कनेक्ट हो गया है."
+            speech = "डिवाइस को केंद्रीय डैशबोर्ड से डिस्कनेक्ट कर दिया गया है."
+        elif lang == "hinglish":
             text = "🔌 **Device Disconnected:** Device has been disconnected from central dashboard synchronization."
             speech = "Device disconnected from the central dashboard."
         else:
@@ -887,15 +1143,261 @@ def synthesize_response_nlp(
             speech = f"Device has been disconnected from the dashboard, {user_name}."
         return text, speech
 
-    # Fallback general query (AMOJA AI Female Persona)
+    # --- Personal Assistant & Productivity Tools Response Formatting ---
+    if tool_name == "create_reminder":
+        rem = tool_result_data
+        title = rem.get("title", "Reminder")
+        due = rem.get("due_time", "Soon")
+        if lang == "mr":
+            text = f"⏰ **स्मरणपत्र तयार केले (Reminder Created):**\n\n- **विषय:** `{title}`\n- **वेळ:** {due}\n- **स्थिती:** सक्रिय"
+            speech = f"स्मरणपत्र सेव्ह केले आहे: {title}."
+        elif lang == "hi":
+            text = f"⏰ **रिमाइंडर सेट किया गया (Reminder Created):**\n\n- **शीर्षक:** `{title}`\n- **समय:** {due}\n- **स्थिति:** सक्रिय"
+            speech = f"रिमाइंडर सेट कर दिया गया है: {title}."
+        elif lang == "hinglish":
+            text = f"⏰ **Reminder Created:**\n\n- **Task:** `{title}`\n- **Due:** {due}\n- **Status:** Active"
+            speech = f"Maine reminder save kar diya hai: {title}."
+        else:
+            text = f"⏰ **Reminder Created Successfully:**\n\n- **Task:** `{title}`\n- **Scheduled:** {due}\n- **Status:** Active"
+            speech = f"Reminder set for {title}."
+        return text, speech
+
+    if tool_name == "list_reminders":
+        rems = tool_result_data.get("reminders", [])
+        if not rems:
+            msg = "No active reminders found."
+            return f"⏰ **Reminders:** {msg}", msg
+        items = "\n".join([f"- **#{r['id']}** [{r.get('priority', 'NORMAL')}]: {r['title']} (Due: {r.get('due_time', 'Soon')})" for r in rems])
+        text = f"⏰ **Active Reminders ({len(rems)}):**\n\n{items}"
+        speech = f"You have {len(rems)} active reminders."
+        return text, speech
+
+    if tool_name == "create_note":
+        note = tool_result_data
+        title = note.get("title", "Note")
+        if lang == "mr":
+            text = f"📝 **नोंद सेव्ह केली (Note Saved):**\n\n- **शीर्षक:** `{title}`\n\n{note.get('content', '')}"
+            speech = f"नोंद यशस्वीरीत्या सेव्ह केली आहे."
+        elif lang == "hi":
+            text = f"📝 **नोट सहेज लिया गया (Note Saved):**\n\n- **शीर्षक:** `{title}`\n\n{note.get('content', '')}"
+            speech = f"नोट सफलतापूर्वक सहेज लिया गया है."
+        elif lang == "hinglish":
+            text = f"📝 **Note Saved:**\n\n- **Title:** `{title}`\n\n{note.get('content', '')}"
+            speech = f"Note successfully save kar diya hai."
+        else:
+            text = f"📝 **Personal Note Saved:**\n\n- **Title:** `{title}`\n\n{note.get('content', '')}"
+            speech = f"Note '{title}' saved successfully."
+        return text, speech
+
+    if tool_name == "search_notes":
+        notes = tool_result_data.get("notes", [])
+        q = tool_result_data.get("query", "")
+        if not notes:
+            text = f"📝 **Notes Search:** No notes matched query '{q}'."
+            speech = f"No notes found matching '{q}'."
+            return text, speech
+        items = "\n\n".join([f"### 📝 {n['title']} (ID: #{n['id']})\n{n['content']}" for n in notes[:5]])
+        text = f"📝 **Saved Notes ({len(notes)}):**\n\n{items}"
+        speech = f"Found {len(notes)} saved notes."
+        return text, speech
+
+    if tool_name == "add_todo_item":
+        todo = tool_result_data
+        text = f"✅ **To-Do Item Added:** `{todo.get('task')}` [Priority: {todo.get('priority')}]"
+        speech = f"Task added to your to-do checklist."
+        return text, speech
+
+    if tool_name == "list_todo_items":
+        todos = tool_result_data.get("todos", [])
+        if not todos:
+            return "✅ **To-Do Checklist:** No pending tasks on your list.", "Your to-do checklist is clear."
+        items = "\n".join([f"- {'[x]' if t['completed'] else '[ ]'} **#{t['id']}** {t['task']} ({t['priority']})" for t in todos])
+        text = f"✅ **Personal To-Do Checklist ({len(todos)} items):**\n\n{items}"
+        speech = f"You have {len(todos)} tasks on your to-do list."
+        return text, speech
+
+    if tool_name == "store_user_memory":
+        mem = tool_result_data
+        text = f"🧠 **Long-Term Memory Saved:**\n\n- **Key:** `{mem.get('key')}`\n- **Recalled Value:** {mem.get('value')}"
+        speech = f"I will remember that: {mem.get('key')}."
+        return text, speech
+
+    if tool_name == "list_user_memories":
+        mems = tool_result_data.get("memories", [])
+        if not mems:
+            return "🧠 **Stored Memory:** No user memories currently saved.", "No stored memories found."
+        items = "\n".join([f"- **{m['memory_key']}**: {m['memory_value']} ({m.get('category', 'preference')})" for m in mems])
+        text = f"🧠 **User-Controlled Memory Facts ({len(mems)}):**\n\n{items}\n\n*You can delete or clear memories at any time.*"
+        speech = f"Retrieved {len(mems)} stored memory facts."
+        return text, speech
+
+    if tool_name == "search_workspace_files":
+        res = tool_result_data
+        matches = res.get("matches", [])
+        q = res.get("query", "")
+        if not matches:
+            text = f"📁 **File Search:** No authorized workspace files found matching '{q}'."
+            speech = f"No workspace files found matching '{q}'."
+            return text, speech
+        items = "\n".join([f"- 📄 `{m['relative_path']}` ({m['size_bytes']} bytes)" for m in matches[:10]])
+        text = f"📁 **Authorized Workspace Files Matching '{q}' ({len(matches)}):**\n\n{items}"
+        speech = f"Found {len(matches)} matching files in workspace."
+        return text, speech
+
+    if tool_name == "launch_approved_application":
+        res = tool_result_data
+        if res.get("error"):
+            return f"⛔ **Application Launch Blocked:** {res['error']}\n\n*{res.get('security_guardrail', '')}*", "Launch request blocked by Zero-Trust policy."
+        app_n = res.get("application", "Application")
+        pid = res.get("pid")
+        text = f"🚀 **Launched Approved Application:** `{app_n}` (Process ID: {pid})\n\nZero-Trust whitelist confirmed binary authenticity."
+        speech = f"Launched approved application: {app_n}."
+        return text, speech
+
+    # --- Conversational & Fallback Queries (Pure Same-Language Synthesis) ---
+    p_lower = (user_prompt or "").lower()
+
+    # 1. Greetings ("How are you?", "hello", "kaise ho", "kashi aahes")
+    if any(q in p_lower for q in ["how are you", "kaise ho", "kaisa hai", "kashi aahes", "kasa ahes", "kase ahat", "aap kaise"]):
+        if lang == "mr":
+            text = (
+                f"👋 **नमस्कार {user_name}! मी अमोझा (AMOJA AI), अगदी मजेत आणि पूर्ण क्षमतेने सज्ज आहे.**\n\n"
+                f"AgentShield ची सर्व झिरो-ट्रस्ट संरक्षण यंत्रणा सुरळीतपणे कार्यरत आहे. आज मी आपल्या सुरक्षिततेसाठी काय मदत करू शकते?"
+            )
+            speech = f"नमस्कार {user_name}! मी अगदी मजेत आणि सज्ज आहे. सर्व प्रणाली सुरक्षित आहेत. आज मी कशी मदत करू?"
+        elif lang == "hi":
+            text = (
+                f"👋 **नमस्ते {user_name}! मैं अमोझा (AMOJA AI), बिल्कुल ठीक हूँ और पूरी तत्परता से सक्रिय हूँ.**\n\n"
+                f"AgentShield के सभी शून्य-विश्वास (Zero-Trust) सुरक्षा तंत्र सामान्य रूप से कार्य कर रहे हैं. आज मैं आपकी सुरक्षा में क्या सहायता कर सकती हूँ?"
+            )
+            speech = f"नमस्ते {user_name}! मैं बिल्कुल ठीक हूँ. सभी प्रणालियाँ सुरक्षित और सक्रिय हैं. आज मैं आपकी क्या सहायता करूँ?"
+        elif lang == "hinglish":
+            text = (
+                f"👋 **Hello {user_name}! Main bilkul theek hoon, thank you!**\n\n"
+                f"AgentShield ke sabhi Zero-Trust security systems smoothly run kar rahe hain. Main aapke system ya security check mein kaise help kar sakti hoon?"
+            )
+            speech = f"Hello {user_name}! Main bilkul theek hoon. Sabhi security systems active hain. Bataiye, main aapki kya madad kar sakti hoon?"
+        else:
+            text = (
+                f"👋 **Hello {user_name}! I am doing great and operating at peak performance.**\n\n"
+                f"All AgentShield Zero-Trust defense systems and security monitors are active and synchronized. How may I assist your operations today?"
+            )
+            speech = f"Hello {user_name}! I am doing great and operating at peak performance. All systems are fully secured. How can I assist you today?"
+        return text, speech
+
+    # 2. Assistant Capabilities ("Amoja, tum kya kar sakti ho?", "what can you do?", "kay karu shakte")
+    if any(q in p_lower for q in [
+        "tum kya kar sakti ho", "tum kya kar sakte ho", "kya kar sakti ho", "kya kar sakte ho",
+        "kya karti ho", "what can you do", "kay karu shakte", "kay karu shaktes", "aap kya kar sakti",
+        "आप क्या कर सकती", "काय करू शकते", "तुम क्या कर सकती हो"
+    ]):
+        if lang == "mr":
+            text = (
+                f"🛡️ **मी अमोझा (AMOJA AI) — आपली स्वायत्त सायबर सुरक्षा सहाय्यक.**\n\n"
+                f"माझी प्रमुख वैशिष्ट्ये आणि क्षमता पुढीलप्रमाणे आहेत:\n"
+                f"- **लॅपटॉप व डिव्हाइस सुरक्षा:** संगणकाची सुरक्षा स्थिती, CPU/RAM भार आणि अलर्ट्स तपासणे.\n"
+                f"- **संशयास्पद नेटवर्क कनेक्शन:** अनधिकृत ओपन पोर्ट्स आणि सॉकेट्स शोधणे.\n"
+                f"- **धोके व सुरक्षा घटना:** क्रिटिकल थ्रेट्स, प्रॉम्प्ट इंजेक्शन हल्ले आणि डेटा लीकेज ट्रॅक करणे.\n"
+                f"- **झिरो-ट्रस्ट एजंट नियंत्रण:** धोकादायक AI एजंट्स ओळखणे आणि आणीबाणीचा किल-स्विच चालवणे.\n"
+                f"- **बहुभाषिक संवाद:** मराठी, हिंदी, हिंग्लिश आणि इंग्रजीत अचूक संवाद साधणे.\n\n"
+                f"तुम्ही विचारू शकता: *'माझ्या laptop ची security तपास'* किंवा *'क्रिटिकल धोके दाखवा'*."
+            )
+            speech = "मी अमोझा, आपली सायबर सुरक्षा सहाय्यक. मी लॅपटॉप सुरक्षा तपासणी, संशयास्पद नेटवर्क कनेक्शन आणि धोक्यांचे व्यवस्थापन करू शकते. मी कशी मदत करू?"
+        elif lang == "hi":
+            text = (
+                f"🛡️ **मैं अमोझा (AMOJA AI) हूँ — आपकी स्वायत्त साइबर सुरक्षा सहायिका.**\n\n"
+                f"मेरी प्रमुख क्षमताएं इस प्रकार हैं:\n"
+                f"- **सिस्टम व डिवाइस सुरक्षा जांच:** आपके लैपटॉप/कंप्यूटर की स्थिति, सीपीयू/रैम भार और अलर्ट्स की जांच.\n"
+                f"- **संदिग्ध नेटवर्क कनेक्शन:** अनधिकृत ओपन पोर्ट्स और रिवर्स शेल्स की पड़ताल.\n"
+                f"- **खतरे व सुरक्षा घटनाएं:** गंभीर सुरक्षा खतरे, प्रॉम्प्ट इंजेक्शन और डेटा लीकेज पर निगरानी.\n"
+                f"- **एआई एजेंट नियंत्रण:** उच्च जोखिम वाले एजेंट्स को खोजना और जरूरत पड़ने पर किल-स्विच सक्रिय करना.\n"
+                f"- **बहुभाषी संवाद:** हिन्दी, हिंग्लिश, मराठी और अंग्रेज़ी में सहज संवाद.\n\n"
+                f"आप कह सकते हैं: *'मेरा सिस्टम चेक करो'* या *'सारे खतरे दिखाओ'*."
+            )
+            speech = "मैं अमोझा हूँ, आपकी साइबर सुरक्षा सहायिका. मैं सिस्टम सुरक्षा जांच, संदिग्ध कनेक्शन और गंभीर खतरों की निगरानी कर सकती हूँ. बताइए, क्या जांचना है?"
+        elif lang == "hinglish":
+            text = (
+                f"🛡️ **Main AMOJA AI hoon — aapki autonomous cybersecurity companion.**\n\n"
+                f"Yahan meri key capabilities hain:\n"
+                f"- **System & Laptop Security Check:** Aapke device ka security posture, CPU/RAM telemetry, aur open alerts inspect karna.\n"
+                f"- **Suspicious Connections & Open Ports:** Unauthorized network sockets aur open ports scan karna.\n"
+                f"- **Threat & Incident Monitoring:** Critical threats, prompt injection attempts, aur data leaks detect karna.\n"
+                f"- **AI Agent Zero-Trust Defense:** Risky AI agents ko analyze karna aur emergency kill switch trigger karna.\n"
+                f"- **Multilingual Support:** English, Hindi, Marathi, aur Hinglish mein naturally respond karna.\n\n"
+                f"Aap bol sakte hain: *'Mera system check karo'* ya *'Critical threats dikhao'*."
+            )
+            speech = "Main AMOJA AI hoon, aapki cybersecurity assistant. Main system security check, open ports scanning, threat detection, aur emergency response handle kar sakti hoon. Bataiye, kya inspect karna hai?"
+        else:
+            text = (
+                f"🛡️ **I am AMOJA AI — your autonomous cybersecurity defense companion.**\n\n"
+                f"Here are my core capabilities across AgentShield:\n"
+                f"- **Endpoint & Device Security:** Inspect laptop/workstation posture, resource utilization, and firewall status.\n"
+                f"- **Suspicious Socket & Port Scanning:** Identify unauthorized egress connections and listening services.\n"
+                f"- **Threat Detection & Triage:** Monitor critical security incidents, prompt injections, and DLP exfiltration.\n"
+                f"- **Zero-Trust AI Agent Governance:** Assess agent risk scores, policy drifts, and enforce emergency containment.\n"
+                f"- **Multilingual Per-Turn Interaction:** Seamlessly converse in English, Hindi, Marathi, and Hinglish.\n\n"
+                f"Try asking: *'Check my laptop security'* or *'Show critical threats'*."
+            )
+            speech = "I am AMOJA AI, your cybersecurity defense assistant. I monitor endpoint security, scan for suspicious connections, triage threats, and govern autonomous AI agents. What would you like to inspect?"
+        return text, speech
+
+    # 3. Explicit English Directive ("Please explain this in English.")
+    if any(q in p_lower for q in ["explain this in english", "explain in english", "in english", "switch to english"]):
+        text = (
+            "Understood. Switching to English immediately. I am AMOJA AI, your autonomous cybersecurity defense assistant. "
+            "All AgentShield Zero-Trust monitors, endpoint telemetry engines, and threat detection modules are operational. "
+            "How can I assist you with your security operations?"
+        )
+        speech = "Understood. Switching to English immediately. All security monitors are active. How can I assist you today?"
+        return text, speech
+
+    # 4. Computer Slow Diagnostics (Conversational Fallback)
+    if any(q in p_lower for q in ["slow", "धीमा", "धीमे", "मंद", "lag"]):
+        if lang == "mr":
+            text = (
+                f"💻 **संगणक/लॅपटॉप मंद चालण्याची कारणे आणि उपाय:**\n\n"
+                f"1. **जास्त CPU किंवा RAM वापर:** पार्श्वभूमीत एखादी मोठी प्रक्रिया किंवा अनावश्यक ॲप कार्यरत असू शकते.\n"
+                f"2. **संशयास्पद नेटवर्क हालचाली:** मालवेअर किंवा अनधिकृत बॅकग्राउंड प्रक्रिया संगणकाचा वेग कमी करू शकतात.\n"
+                f"3. **कमी स्टोरेज जागा:** सिस्टम ड्राईव्ह भरल्यामुळे व्हर्च्युअल मेमरी मंदावू शकते.\n\n"
+                f"थेट सद्य स्थिती तपासण्यासाठी तुम्ही *'माझ्या laptop ची security तपास'* असे सांगू शकता."
+            )
+            speech = "लॅपटॉप मंद चालण्याचे मुख्य कारण जास्त सीपीयू वापर, पार्श्वभूमीतील प्रक्रिया किंवा संशयास्पद हालचाली असू शकतात. सद्य स्थिती तपासण्यासाठी 'माझ्या laptop ची security तपास' म्हणा."
+        elif lang == "hi":
+            text = (
+                f"💻 **कंप्यूटर धीमा चलने के संभावित कारण एवं समाधान:**\n\n"
+                f"1. **अत्यधिक CPU / RAM लोड:** बैकग्राउंड में कोई भारी सॉफ्टवेयर या अनचाही प्रक्रिया चल रही हो सकती है.\n"
+                f"2. **संदिग्ध गतिविधि या मैलवेयर:** कभी-कभी अनधिकृत बैकग्राउंड कनेक्शन सिस्टम रिसोर्स का उपभोग करते हैं.\n"
+                f"3. **कम डिस्क स्पेस:** सिस्टम ड्राइव भरने से वर्चुअल मेमोरी की गति धीमी हो जाती है.\n\n"
+                f"आप *'मेरा सिस्टम चेक करो'* या *'संदिग्ध कनेक्शन चेक करो'* बोलकर तत्काल सुरक्षा जांच शुरू कर सकते हैं."
+            )
+            speech = "कंप्यूटर धीमा चलने का मुख्य कारण बैकग्राउंड में चल रहे भारी प्रोग्राम्स, हाई सीपीयू उपयोग या अनधिकृत कनेक्शन हो सकते हैं. संपूर्ण जांच के लिए आप 'मेरा सिस्टम चेक करो' कह सकते हैं."
+        elif lang == "hinglish":
+            text = (
+                f"💻 **Computer Slow Hone Ke Main Reasons & Solutions:**\n\n"
+                f"1. **High CPU/RAM Usage:** Background mein heavy processes ya unnecessary apps system resources consume kar rahi ho sakti hain.\n"
+                f"2. **Suspicious Background Activity:** Malware ya crypto-miner connections system ko slow kar sakte hain.\n"
+                f"3. **Low Storage Space:** C: drive bharne se virtual memory performance affect hoti hai.\n\nAap *'Mera system check karo'* ya *'Check suspicious connections'* bolkar live telemetry inspect kar sakte hain."
+            )
+            speech = "Computer slow hone ke primary reasons heavy background processes, high CPU/RAM load ya suspicious connections ho sakte hain. Live check ke liye 'mera system check karo' bolein."
+        else:
+            text = (
+                f"💻 **Potential Causes for System Sluggishness & Diagnostics:**\n\n"
+                f"1. **High Resource Consumption:** Background services or heavy tasks exhausting available CPU and RAM cycles.\n"
+                f"2. **Suspicious Activity / Malware:** Unauthorized background processes or cryptographic mining agents generating latency.\n"
+                f"3. **Storage Fragmentation & Disk Pressure:** Depleted space on system storage affecting paging operations.\n\nYou can ask: *'Check my laptop security'* or *'Check suspicious connections'* to launch an immediate diagnostic."
+            )
+            speech = "System sluggishness is typically caused by high CPU or memory utilization, background tasks, or unauthorized network activity. You can say 'check my laptop security' to inspect live telemetry."
+        return text, speech
+
+    # 5. Default General Greeting / Fallback
     if is_friendly:
         if lang == "mr":
             text = (
                 f"👋 **नमस्कार {user_name}! मी अमोझा (AMOJA AI).**\n\n"
                 f"आपली स्वायत्त सायबर सुरक्षा सहाय्यक सज्ज आहे. सर्व झिरो-ट्रस्ट नियंत्रणे सुरळीत चालू आहेत.\n\n"
                 f"**आपण पुढील गोष्टी विचारू शकता:**\n"
+                f"- *'माझ्या laptop ची security तपास'*\n"
                 f"- *'सुरक्षा सारांश द्या'*\n"
-                f"- *'डिव्हाइस सुरक्षा स्थिती सांगा'*\n"
                 f"- *'नवीन शोधलेली उपकरणे दाखवा'*\n"
                 f"- *'क्रिटिकल अलर्ट्स दाखवा'*"
             )
@@ -905,9 +1407,9 @@ def synthesize_response_nlp(
                 f"👋 **नमस्ते {user_name}! मैं अमोझा (AMOJA AI) हूँ.**\n\n"
                 f"आपकी स्वायत्त साइबर सुरक्षा सहायिका. AgentShield शून्य-विश्वास नियंत्रण कक्ष तैयार है.\n\n"
                 f"**आप मुझसे पूछ सकते हैं:**\n"
+                f"- *'मेरा सिस्टम चेक करो'*\n"
                 f"- *'सुरक्षा सारांश बताओ'*\n"
-                f"- *'डिवाइस सुरक्षा स्थिति बताओ'*\n"
-                f"- *'इसके पोर्ट्स दिखाओ'*\n"
+                f"- *'संदिग्ध कनेक्शन चेक करो'*\n"
                 f"- *'सारे खतरे दिखाओ'*"
             )
             speech = f"नमस्ते {user_name}! मैं अमोझा हूँ. सभी सुरक्षा प्रणालियाँ सक्रिय हैं. मैं आपकी क्या सहायता करूँ?"
@@ -916,10 +1418,10 @@ def synthesize_response_nlp(
                 f"👋 **Hey {user_name}! I'm AMOJA AI.**\n\n"
                 f"Your autonomous AI cybersecurity defense companion. Sabhi zero-trust defenses active hain.\n\n"
                 f"**You can ask me:**\n"
+                f"- *'Mera system check karo'*\n"
                 f"- *'Give me the security summary'*\n"
-                f"- *'Show device security status'*\n"
-                f"- *'Check its open ports'*\n"
-                f"- *'Show newly discovered devices'*"
+                f"- *'Check suspicious connections'*\n"
+                f"- *'Show critical threats'*"
             )
             speech = f"Hey {user_name}! AMOJA AI here. All zero-trust controls are active and enforcing. What would you like to check?"
         else:
@@ -927,9 +1429,9 @@ def synthesize_response_nlp(
                 f"👋 **Hey {user_name}! I'm AMOJA AI.**\n\n"
                 f"Your autonomous female AI cybersecurity companion defending AgentShield. All systems nominal and zero-trust policies are active.\n\n"
                 f"**Quick directives:**\n"
+                f"- *'Check my laptop security'*\n"
                 f"- *'Give me the security summary'*\n"
-                f"- *'Show device security status'*\n"
-                f"- *'What about its open ports?'*\n"
+                f"- *'Check suspicious connections'*\n"
                 f"- *'Show newly discovered devices'*\n"
                 f"- *'Show all critical threats'*"
             )
@@ -944,7 +1446,7 @@ def synthesize_response_nlp(
             speech = f"AgentShield नियंत्रण कक्ष तैयार. शून्य-विश्वास सक्रिय. अगला निर्देश दें."
         elif lang == "hinglish":
             text = f"🛡️ **AgentShield Zero-Trust Control Plane:**\n\n- Operator: `{user_name}`\n- Posture: **ENFORCING**\n- Registry: 18 authorized operational tools online."
-            speech = f"Zero-Trust control plane active. Standing by for operational instructions."
+            speech = "Zero-Trust control plane active. Standing by for operational instructions."
         else:
             text = f"🛡️ **AgentShield Zero-Trust Control Plane:**\n\n- Operator: `{user_name}`\n- Enforcement Posture: **ENFORCING**\n- Tool Registry: 18 authorized security tools ready."
             speech = f"Zero-Trust control plane active, {user_name}. Standing by for operational instructions."
@@ -957,7 +1459,11 @@ async def process_jarvis_turn(
 ) -> JarvisMessageResponse:
     """Core conversational turn processor integrating voice, security guardrails, tools, and LLMs."""
     session_id = get_or_create_session(request.session_id, user.get("username", "admin"))
-    user_lang = detect_language(request.message, request.language)
+    u_name = user.get("username", "admin")
+    session_context = get_recent_turn_context(session_id, u_name)
+    session_lang = session_context.get("last_language")
+    user_lang = detect_language(request.message, request.language, session_lang=session_lang)
+    set_session_context_field(session_id, u_name, "last_language", user_lang)
     is_local_mode = os.getenv("JARVIS_LOCAL_MODE", "true").lower() in {"1", "true", "yes"}
 
     # 1. Screen incoming user message for prompt injection / jailbreak attempts across languages
@@ -1207,7 +1713,7 @@ async def process_jarvis_turn(
     )
 
     audio_b64 = None
-    if request.is_voice and speech_text:
+    if speech_text:
         try:
             audio_b64 = local_tts_engine.synthesize_base64(speech_text, language=user_lang)
         except Exception:

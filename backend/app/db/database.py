@@ -263,6 +263,46 @@ def init_db():
             executed_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS jarvis_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            due_time TEXT,
+            priority TEXT NOT NULL DEFAULT 'NORMAL',
+            completed INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS jarvis_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS jarvis_todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            task TEXT NOT NULL,
+            completed INTEGER NOT NULL DEFAULT 0,
+            priority TEXT NOT NULL DEFAULT 'NORMAL',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS jarvis_user_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            memory_key TEXT NOT NULL,
+            memory_value TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'preference',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, memory_key)
+        );
+
         CREATE TABLE IF NOT EXISTS approved_scan_scopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,

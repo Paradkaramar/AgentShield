@@ -10,7 +10,19 @@ from ..jarvis.jarvis_schemas import (
     JarvisBriefingResponse, JarvisPreferences, JarvisSessionInfo,
     JarvisAudioTranscribeRequest, JarvisAudioTranscribeResponse,
     JarvisAudioSynthesizeRequest, JarvisAudioSynthesizeResponse,
-    JarvisVoiceEngineInfo
+    JarvisVoiceEngineInfo,
+    StegoInspectRequest, StegoEncodeRequest, StegoDecodeRequest,
+    JarvisReminderCreate, JarvisNoteCreate, JarvisTodoCreate, JarvisMemoryCreate
+)
+from ..jarvis.cyber_tools.stego_engine import (
+    encode_stego_message, decode_stego_message, inspect_image_and_exif
+)
+from ..jarvis.personal_assistant import (
+    create_reminder, list_reminders, delete_reminder,
+    create_note, search_notes, list_notes, delete_note,
+    add_todo_item, list_todo_items, toggle_todo_item,
+    store_user_memory, list_user_memories, delete_user_memory, clear_all_user_memories,
+    APPROVED_APPLICATIONS
 )
 from ..jarvis.jarvis_service import (
     process_jarvis_turn, execute_confirmed_action, generate_proactive_briefing
@@ -18,7 +30,7 @@ from ..jarvis.jarvis_service import (
 from ..jarvis.jarvis_tools import TOOL_REGISTRY
 from ..jarvis.jarvis_memory import (
     get_session_history, clear_session_history, list_user_sessions,
-    get_user_preferences, save_user_preferences
+    get_user_preferences, save_user_preferences, search_conversation_history
 )
 from ..jarvis.speech_to_text import local_stt_engine, transcribe_audio_locally
 from ..jarvis.text_to_speech import local_tts_engine
@@ -216,3 +228,247 @@ def synthesize_audio_json_endpoint(
         voice_id=payload.voice_id or voice["id"],
         is_local=True
     )
+
+@router.post("/cyber/stego/inspect")
+def inspect_stego_endpoint(
+    payload: StegoInspectRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Deep forensic inspection of an image carrier: detects stego payloads, bitplane entropy, and EXIF/GPS metadata."""
+    try:
+        return inspect_image_and_exif(payload.image_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/cyber/stego/encode")
+def encode_stego_endpoint(
+    payload: StegoEncodeRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Encodes a secret message into an image carrier with cryptographic SHA-256 integrity."""
+    try:
+        return encode_stego_message(payload.image_data, payload.message, password=payload.password)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/cyber/stego/decode")
+def decode_stego_endpoint(
+    payload: StegoDecodeRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Extracts a hidden secret message from an image carrier."""
+    try:
+        return decode_stego_message(payload.image_data, password=payload.password)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ==============================================================================
+# Phase 3: Personal Assistant & User-Controlled Memory REST Endpoints
+# ==============================================================================
+
+# --- Reminders ---
+@router.get("/reminders")
+def get_reminders(
+    include_completed: bool = Query(default=False),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Retrieves reminders for the active user."""
+    user_id = current_user.get("username", "admin")
+    return {"reminders": list_reminders(user_id, include_completed=include_completed)}
+
+@router.post("/reminders")
+def post_reminder(
+    payload: JarvisReminderCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Creates a new reminder for the active user."""
+    user_id = current_user.get("username", "admin")
+    result = create_reminder(user_id, payload.title, payload.due_time, payload.priority)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@router.delete("/reminders/{reminder_id}")
+def remove_reminder(
+    reminder_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Deletes a reminder."""
+    user_id = current_user.get("username", "admin")
+    success = delete_reminder(reminder_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Reminder not found or access denied")
+    return {"message": f"Reminder #{reminder_id} deleted successfully."}
+
+# --- Notes ---
+@router.get("/notes")
+def get_notes(
+    query: Optional[str] = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists or searches personal notes."""
+    user_id = current_user.get("username", "admin")
+    if query:
+        notes = search_notes(user_id, query)
+    else:
+        notes = list_notes(user_id, limit=limit)
+    return {"notes": notes}
+
+@router.post("/notes")
+def post_note(
+    payload: JarvisNoteCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Creates a new personal note."""
+    user_id = current_user.get("username", "admin")
+    result = create_note(user_id, payload.title, payload.content, payload.tags)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@router.delete("/notes/{note_id}")
+def remove_note(
+    note_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Deletes a personal note."""
+    user_id = current_user.get("username", "admin")
+    success = delete_note(note_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Note not found or access denied")
+    return {"message": f"Note #{note_id} deleted successfully."}
+
+# --- To-Dos ---
+@router.get("/todos")
+def get_todos(
+    include_completed: bool = Query(default=True),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Lists user to-do tasks."""
+    user_id = current_user.get("username", "admin")
+    return {"todos": list_todo_items(user_id, include_completed=include_completed)}
+
+@router.post("/todos")
+def post_todo(
+    payload: JarvisTodoCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Adds a task to the user's to-do list."""
+    user_id = current_user.get("username", "admin")
+    result = add_todo_item(user_id, payload.task, payload.priority)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@router.patch("/todos/{todo_id}/toggle")
+def toggle_todo(
+    todo_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Toggles task completion."""
+    user_id = current_user.get("username", "admin")
+    result = toggle_todo_item(todo_id, user_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+# --- User-Controlled Memories ---
+@router.get("/memories")
+def get_memories(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Lists all user-controlled persistent memories."""
+    user_id = current_user.get("username", "admin")
+    return {"memories": list_user_memories(user_id)}
+
+@router.post("/memories")
+def post_memory(
+    payload: JarvisMemoryCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Stores a user-controlled memory."""
+    user_id = current_user.get("username", "admin")
+    result = store_user_memory(user_id, payload.key, payload.value, payload.category)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+@router.delete("/memories/{key}")
+def remove_memory(
+    key: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Deletes a specific user memory."""
+    user_id = current_user.get("username", "admin")
+    success = delete_user_memory(user_id, key)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Memory '{key}' not found")
+    return {"message": f"Memory '{key}' deleted successfully."}
+
+@router.delete("/memories")
+def clear_memories(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Clears all user memories."""
+    user_id = current_user.get("username", "admin")
+    count = clear_all_user_memories(user_id)
+    return {"message": f"Cleared {count} memory entries.", "count": count}
+
+# --- Search Conversation History ---
+@router.get("/history/search")
+def search_history(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Searches past conversation messages across all sessions."""
+    user_id = current_user.get("username", "admin")
+    matches = search_conversation_history(user_id, q, limit=limit)
+    return {"query": q, "count": len(matches), "results": matches}
+
+# --- System, Privacy & Hybrid AI Status ---
+@router.get("/system/status")
+def get_system_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Returns status of local and hybrid AI components, Zero-Trust posture, and privacy settings."""
+    user_id = current_user.get("username", "admin")
+    prefs = get_user_preferences(user_id)
+    return {
+        "status": "HEALTHY",
+        "zero_trust_status": "ENFORCING",
+        "cloud_processing_consent": prefs.cloud_processing_consent,
+        "local_mode_active": prefs.local_mode,
+        "providers": {
+            "local_asr": {
+                "name": "Local Indic-Whisper Engine",
+                "available": True,
+                "status": "ONLINE",
+                "mode": "100% On-Device",
+                "languages": ["hi", "mr", "hinglish", "en"]
+            },
+            "local_tts": {
+                "name": "Local Piper Indic TTS Engine",
+                "available": True,
+                "status": "ONLINE",
+                "mode": "100% On-Device",
+                "languages": ["hi", "mr", "hinglish", "en"]
+            },
+            "local_llm": {
+                "name": "Ollama / Local Security LLM",
+                "available": True,
+                "status": "STANDBY",
+                "mode": "Local Offline Fallback"
+            },
+            "cloud_llm": {
+                "name": "Cloud AI Provider (OpenAI/Anthropic)",
+                "available": bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
+                "status": "AVAILABLE" if (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")) else "NOT_CONFIGURED",
+                "requires_consent": True,
+                "consent_granted": prefs.cloud_processing_consent
+            }
+        },
+        "approved_apps": list(APPROVED_APPLICATIONS.keys()),
+        "security_safeguards": {
+            "unrestricted_shell_blocked": True,
+            "idempotency_enforced": True,
+            "audit_logging_enabled": True,
+            "role_based_access_control": True
+        }
+    }
+

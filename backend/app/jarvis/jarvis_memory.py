@@ -225,3 +225,17 @@ def save_user_preferences(user_id: str, prefs: JarvisPreferences) -> None:
                ON CONFLICT(user_id) DO UPDATE SET preferences_json=excluded.preferences_json, updated_at=excluded.updated_at""",
             (user_id, data_json, now)
         )
+
+def search_conversation_history(user_id: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Searches across user's past conversation messages with role, content, and session title."""
+    clean_q = f"%{(query or '').strip()}%"
+    with connect() as db:
+        rows = db.execute(
+            """SELECT m.id, m.session_id, m.role, m.content, m.created_at, s.title as session_title
+               FROM jarvis_messages m
+               JOIN jarvis_sessions s ON m.session_id = s.id
+               WHERE s.user_id = ? AND m.content LIKE ?
+               ORDER BY m.id DESC LIMIT ?""",
+            (user_id, clean_q, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]

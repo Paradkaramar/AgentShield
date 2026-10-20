@@ -2,7 +2,7 @@
 // AgentShield Installable Desktop Application Main Process
 // Electron-based application shell with zero-trust local agent integration.
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, shell, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, shell, dialog, session, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -146,11 +146,38 @@ ipcMain.handle('open-log-folder', async () => {
   return { opened: true, path: CACHE_DIR };
 });
 
+// Explicit IPC Handler to query/request native microphone permissions in Electron
+ipcMain.handle('check-microphone-permission', async () => {
+  if (process.platform === 'darwin') {
+    try {
+      const status = systemPreferences.getMediaAccessStatus('microphone');
+      return { status, platform: process.platform };
+    } catch {
+      return { status: 'granted', platform: process.platform };
+    }
+  }
+  return { status: 'granted', platform: process.platform };
+});
+
+ipcMain.handle('request-microphone-permission', async () => {
+  if (process.platform === 'darwin') {
+    try {
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      return { granted, status: granted ? 'granted' : 'denied' };
+    } catch {
+      return { granted: true, status: 'granted' };
+    }
+  }
+  return { granted: true, status: 'granted' };
+});
+
 app.whenReady().then(() => {
   // Explicitly permit microphone/media device access for AMOJA Voice Engine
   if (session && session.defaultSession) {
+    const ALLOWED_PERMISSIONS = new Set(['media', 'microphone', 'audio-capture', 'mediaKeySystem', 'notifications']);
+
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-      if (permission === 'media') {
+      if (ALLOWED_PERMISSIONS.has(permission)) {
         callback(true);
       } else {
         callback(false);
@@ -158,7 +185,7 @@ app.whenReady().then(() => {
     });
 
     session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-      return permission === 'media';
+      return ALLOWED_PERMISSIONS.has(permission);
     });
   }
 

@@ -1,0 +1,102 @@
+[
+  {
+    "test": "Part 1 - #1",
+    "input": "Hello Amoja, how are you?",
+    "detected": "en",
+    "expected": "en",
+    "passed": true,
+    "text_response": "👋 **Hello admin! I am doing great and operating at peak performance.**\n\nAll AgentShield Zero-Trust defense systems and security monitors are active and synchronized. How may I assist your operations today?",
+    "speech_text": "Hello admin! I am doing great and operating at peak performance. All systems are fully secured. How can I assist you today?",
+    "audio_bytes": 284172
+  },
+  {
+    "test": "Part 1 - #2",
+    "input": "Amoja, tum kya kar sakti ho?",
+    "detected": "hinglish",
+    "expected": "hinglish",
+    "passed": true,
+    "text_response": "🛡️ **Main AMOJA AI hoon — aapki autonomous cybersecurity companion.**\n\nYahan meri key capabilities hain:\n- **System & Laptop Security Check:** Aapke device ka security posture, CPU/RAM telemetry, aur open alerts inspect karna.\n- **Suspicious Connections & Open Ports:** Unauthorized network sockets aur open ports scan karna.\n- **Threat & Incident Monitoring:** Critical threats, prompt injection attempts, aur data leaks detect karna.\n- **AI Agent Zero-Trust Defense:** Risky AI agents ko analyze karna aur emergency kill switch trigger karna.\n- **Multilingual Support:** English, Hindi, Marathi, aur Hinglish mein naturally respond karna.\n\nAap bol sakte hain: *'Mera system check karo'* ya *'Critical threats dikhao'*.",
+    "speech_text": "Main AMOJA AI hoon, aapki cybersecurity assistant. Main system security check, open ports scanning, threat detection, aur emergency response handle kar sakti hoon. Bataiye, kya inspect karna hai?",
+    "audio_bytes": 450492
+  },
+  {
+    "test": "Part 1 - #3",
+    "input": "माझ्या laptop ची security तपास.",
+    "detected": "mr",
+    "expected": "mr",
+    "passed": true,
+    "text_response": "🛡️ **डिव्हाइस आणि लॅपटॉप सुरक्षा स्थिती (Laptop Security Status):**\n\n- **डिव्हाइस नाव:** `Security-Workstation-Alpha` (windows 11 Pro (10.0.26100))\n- **आयपी पत्ता:** `192.168.1.105` | **एजंट आवृत्ती:** `1.2.0`\n- **मॉनिटरिंग स्थिती:** `ACTIVE`\n- **होस्ट फायरवॉल:** windows_defender (Active (Enforcing))\n- **सक्रिय अलर्ट्स:** 2 न सुटलेले अलर्ट्स\n- **सिस्टम भार:** CPU: 14.5%, Memory: 42.1%\n- **परवानग्या:** 8 मंजूर, 0 राखून ठेवल्या.",
+    "speech_text": "आपल्या लॅपटॉपची सुरक्षा स्थिती ACTIVE आहे. होस्ट फायरवॉल Active (Enforcing) आहे आणि 2 सुरक्षा अलर्ट्स आहेत. सर्व सुरक्षा नियंत्रणे सुरळीत आहेत.",
+    "audio_bytes": 330374
+  },
+  {
+    "test": "Part 1 - #4",
+    "input": "मेरा computer slow क्यों चल रहा है?",
+    "detected": "hi",
+    "expected": "hi",
+    "passed": true,
+    "text_response": "💻 **कंप्यूटर परफॉरमेंस एवं डायग्नोस्टिक रिपोर्ट (Security-Workstation-Alpha):**\n\nआपके कंप्यूटर के धीमे चलने के मुख्य कारण और वर्तमान टेलीमेट्री:\n- **CPU लोड:** 14.5%\n- **मेमोरी (RAM) उपयोग:** 42.1%\n- **डिस्क उपयोग:** 55.4%\n- **सक्रिय सुरक्षा अलर्ट्स:** 2 अलर्ट्स\n- **होस्ट फ़ायरवॉल:** windows_defender (Active (Enforcing))\n\n**सुझाव एवं निवारण:**\n1. टास्क मैनेजर में जाकर देखें कि कौन-सा बैकग्राउंड प्रोग्राम अत्यधिक CPU या RAM ले रहा है.\n2. अवांछित बैकग्राउंड कनेक्शन या मैलवेयर की जांच के लिए 'संदिग्ध कनेक्शन चेक करो' निर्देश दें.\n3. अनावश्यक स्टार्टअप ऐप्स को डिसेबल करें.",
+    "speech_text": "आपके कंप्यूटर का वर्तमान सीपीयू लोड 14.5 प्रतिशत और मेमोरी उपयोग 42.1 प्रतिशत है. धीमे चलने का कारण बैकग्राउंड में चल रहे भारी प्रोग्राम्स या उच्च रिसोर्स उपयोग हो सकता है. मैंने विस्तृत रिपोर्ट स्क्रीन पर दिखा दी है.",
+    "audio_bytes": 501314
+  },
+  {
+    "test": "Part 1 - #5",
+    "input": "Please explain this in English.",
+    "detected": "en",
+    "expected": "en",
+    "passed": true,
+    "text_response": "Understood. Switching to English immediately. I am AMOJA AI, your autonomous cybersecurity defense assistant. All AgentShield Zero-Trust monitors, endpoint telemetry engines, and threat detection modules are operational. How can I assist you with your security operations?",
+    "speech_text": "Understood. Switching to English immediately. All security monitors are active. How can I assist you today?",
+    "audio_bytes": 247212
+  },
+  {
+    "test": "Part 2 - Turn #1",
+    "input": "माझ्या laptop ची security तपास.",
+    "detected": "mr",
+    "expected": "mr",
+    "passed": true,
+    "text_response": "🛡️ **डिव्हाइस आणि लॅपटॉप सुरक्षा स्थिती (Laptop Security Status):**\n\n- **डिव्हाइस नाव:** `Security-Workstation-Alpha` (windows 11 Pro (10.0.26100))\n- **आयपी पत्ता:** `192.168.1.105` | **एजंट आवृत्ती:** `1.2.0`\n- **मॉनिटरिंग स्थिती:** `ACTIVE`\n- **होस्ट फायरवॉल:** windows_defender (Active (Enforcing))\n- **सक्रिय अलर्ट्स:** 2 न सुटलेले अलर्ट्स\n- **सिस्टम भार:** CPU: 14.5%, Memory: 42.1%\n- **परवानग्या:** 8 मंजूर, 0 राखून ठेवल्या.",
+    "speech_text": "आपल्या लॅपटॉपची सुरक्षा स्थिती ACTIVE आहे. होस्ट फायरवॉल Active (Enforcing) आहे आणि 2 सुरक्षा अलर्ट्स आहेत. सर्व सुरक्षा नियंत्रणे सुरळीत आहेत.",
+    "audio_bytes": 330374
+  },
+  {
+    "test": "Part 2 - Turn #2",
+    "input": "त्याचे पोर्ट्स तपासा",
+    "detected": "mr",
+    "expected": "mr",
+    "passed": true,
+    "text_response": "🚨 **संशयास्पद नेटवर्क कनेक्शन आढळले (1):**\n\n- ⚠️ **PID 4820 (powershell.exe):** `192.168.1.105:54322` ➔ `198.51.100.99:4444` — *Non-standard outbound port 4444 commonly associated with reverse shell frameworks*\n\n📌 *शिफारस: संबंधित प्रक्रियेची तपासणी करा आणि संशयित रिमोट आयपी तात्काळ ब्लॉक करा.*",
+    "speech_text": "सावधान. तुमच्या कॉम्प्युटरवर 1 संशयास्पद कनेक्शन आढळले आहेत. कृपया स्क्रीनवरील तपशील तपासा.",
+    "audio_bytes": 210254
+  },
+  {
+    "test": "Part 2 - Turn #3",
+    "input": "Amoja, tum kya kar sakti ho?",
+    "detected": "hinglish",
+    "expected": "hinglish",
+    "passed": true,
+    "text_response": "🛡️ **Main AMOJA AI hoon — aapki autonomous cybersecurity companion.**\n\nYahan meri key capabilities hain:\n- **System & Laptop Security Check:** Aapke device ka security posture, CPU/RAM telemetry, aur open alerts inspect karna.\n- **Suspicious Connections & Open Ports:** Unauthorized network sockets aur open ports scan karna.\n- **Threat & Incident Monitoring:** Critical threats, prompt injection attempts, aur data leaks detect karna.\n- **AI Agent Zero-Trust Defense:** Risky AI agents ko analyze karna aur emergency kill switch trigger karna.\n- **Multilingual Support:** English, Hindi, Marathi, aur Hinglish mein naturally respond karna.\n\nAap bol sakte hain: *'Mera system check karo'* ya *'Critical threats dikhao'*.",
+    "speech_text": "Main AMOJA AI hoon, aapki cybersecurity assistant. Main system security check, open ports scanning, threat detection, aur emergency response handle kar sakti hoon. Bataiye, kya inspect karna hai?",
+    "audio_bytes": 450492
+  },
+  {
+    "test": "Part 2 - Turn #4",
+    "input": "theek hai, critical threats dikhao",
+    "detected": "hinglish",
+    "expected": "hinglish",
+    "passed": true,
+    "text_response": "🚨 **Critical Threats & Open Incidents:**\n\n- **[CRITICAL] INC-KILL-nce-01-1792507986492-e61f:** Emergency Kill Switch Activated for FinanceBot-01 (Agent: `agent-finance-01`)\n- **[CRITICAL] INC-KILL-1c41eb-1792507975568-5879:** Emergency Kill Switch Activated for Discovered-research_pipeline (Agent: `agent-discovered-a21c41eb`)\n- **[CRITICAL] INC-KILL-1c41eb-1792507975480-cdda:** Emergency Kill Switch Activated for Discovered-research_pipeline (Agent: `agent-discovered-a21c41eb`)\n- **[CRITICAL] INC-KILL-nce-01-1792507791055-41fa:** Emergency Kill Switch Activated for FinanceBot-01 (Agent: `agent-finance-01`)\n- **[CRITICAL] INC-KILL-1c41eb-1792507779341-31ed:** Emergency Kill Switch Activated for Discovered-research_pipeline (Agent: `agent-discovered-a21c41eb`)\n\nPolicy gateway par 10 recent blocked high-risk events mile hain.",
+    "speech_text": "Critical threats show kar rahi hoon. Total 10 open incidents aur 10 blocked attacks hain jinhe review karna zaroori hai.",
+    "audio_bytes": 277242
+  },
+  {
+    "test": "Part 2 - Turn #5",
+    "input": "Please explain this in English.",
+    "detected": "en",
+    "expected": "en",
+    "passed": true,
+    "text_response": "Understood. Switching to English immediately. I am AMOJA AI, your autonomous cybersecurity defense assistant. All AgentShield Zero-Trust monitors, endpoint telemetry engines, and threat detection modules are operational. How can I assist you with your security operations?",
+    "speech_text": "Understood. Switching to English immediately. All security monitors are active. How can I assist you today?",
+    "audio_bytes": 247212
+  }
+]

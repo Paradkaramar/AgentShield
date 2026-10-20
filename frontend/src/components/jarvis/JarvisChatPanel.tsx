@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   Send, Bot, User as UserIcon, ShieldAlert, CheckCircle2, XCircle,
   Terminal, Globe, Trash2, Mic, AlertCircle, ChevronDown, ChevronUp, Copy, Check,
-  Volume2, Play, Pause, Download
+  Volume2, Play, Pause, Download, RefreshCw, Square
 } from "lucide-react";
 import { JarvisMessage, JarvisLanguage, JarvisConfirmationRequest } from "../../types";
 
@@ -20,6 +20,9 @@ interface Props {
   onPlayMessageAudio?: (m: JarvisMessage) => void;
   personalityMode?: "friendly" | "security";
   onTogglePersonalityMode?: (mode: "friendly" | "security") => void;
+  onRetry?: () => void;
+  isSpeaking?: boolean;
+  onStopSpeaking?: () => void;
 }
 
 export const JarvisChatPanel: React.FC<Props> = ({
@@ -34,7 +37,10 @@ export const JarvisChatPanel: React.FC<Props> = ({
   errorMessage,
   onPlayMessageAudio,
   personalityMode = "friendly",
-  onTogglePersonalityMode
+  onTogglePersonalityMode,
+  onRetry,
+  isSpeaking = false,
+  onStopSpeaking
 }) => {
   const [inputText, setInputText] = useState("");
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
@@ -345,11 +351,46 @@ export const JarvisChatPanel: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Error notification banner */}
+        {/* Speaking Status Banner & Interruption Control */}
+        {isSpeaking && (
+          <div className="chat-speaking-banner" role="status" aria-live="polite">
+            <div className="speaking-indicator-left">
+              <span className="pulse-dot" style={{ background: "#00e5ff" }} />
+              <Volume2 size={14} className="text-cyan-400" />
+              <span>AMOJA speaking... (Press Esc or click Interrupt)</span>
+            </div>
+            {onStopSpeaking && (
+              <button
+                type="button"
+                className="btn-chat-interrupt"
+                onClick={onStopSpeaking}
+                title="Stop speaking immediately (Esc)"
+              >
+                <Square size={12} fill="currentColor" />
+                <span>Stop Speaking</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Error notification banner with Retry button */}
         {errorMessage && (
           <div className="chat-error-banner" role="alert">
-            <AlertCircle size={14} />
-            <span>{errorMessage}</span>
+            <div className="error-banner-content">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+            {onRetry && (
+              <button
+                type="button"
+                className="btn-chat-retry"
+                onClick={onRetry}
+                title="Retry the last command"
+              >
+                <RefreshCw size={12} />
+                <span>Retry</span>
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -22,5 +22,9 @@ contextBridge.exposeInMainWorld('agentShieldDesktop', {
   getDeviceIdentity: () => ipcRenderer.invoke('get-device-identity'),
   
   // Open diagnostic log folder
-  openLogFolder: () => ipcRenderer.invoke('open-log-folder')
+  openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
+
+  // Native microphone access check and request
+  checkMicrophonePermission: () => ipcRenderer.invoke('check-microphone-permission'),
+  requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission')
 });

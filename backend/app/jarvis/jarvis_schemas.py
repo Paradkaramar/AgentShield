@@ -164,3 +164,37 @@ class JarvisVoiceEngineInfo(BaseModel):
     tts_engine: str
     tts_is_local: bool
     tts_voices: List[Dict[str, Any]]
+
+# Cyber Tool Schemas (Phase 1 Steganography)
+class StegoInspectRequest(BaseModel):
+    image_data: str
+
+class StegoEncodeRequest(BaseModel):
+    image_data: str
+    message: str
+    password: Optional[str] = None
+
+class StegoDecodeRequest(BaseModel):
+    image_data: str
+    password: Optional[str] = None
+
+# Personal Assistant & Memory Schemas
+class JarvisReminderCreate(BaseModel):
+    title: str
+    due_time: Optional[str] = None
+    priority: str = "NORMAL"
+
+class JarvisNoteCreate(BaseModel):
+    title: str = "Untitled Note"
+    content: str
+    tags: Optional[List[str]] = None
+
+class JarvisTodoCreate(BaseModel):
+    task: str
+    priority: str = "NORMAL"
+
+class JarvisMemoryCreate(BaseModel):
+    key: str
+    value: str
+    category: str = "preference"
+

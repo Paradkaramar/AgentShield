@@ -9,6 +9,7 @@ import { JarvisWaveform } from "../components/jarvis/JarvisWaveform";
 import { JarvisMicButton } from "../components/jarvis/JarvisMicButton";
 import { JarvisSecurityHUD } from "../components/jarvis/JarvisSecurityHUD";
 import { JarvisChatPanel } from "../components/jarvis/JarvisChatPanel";
+import { JarvisVoiceDiagnosticsPanel } from "../components/jarvis/JarvisVoiceDiagnosticsPanel";
 import { jarvisVoice } from "../components/jarvis/JarvisVoiceEngine";
 import {
   JarvisState, JarvisLanguage, JarvisMessage, JarvisBriefing,
@@ -50,10 +51,12 @@ export const JarvisPage: React.FC<Props> = ({
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [preferences, setPreferences] = useState<JarvisPreferences | null>(null);
   const [toolsList, setToolsList] = useState<Record<string, any>>({});
-  const [activeTab, setActiveTab] = useState<"terminal" | "briefing" | "tools" | "settings">("terminal");
+  const [activeTab, setActiveTab] = useState<"terminal" | "briefing" | "tools" | "settings" | "diagnostics">("terminal");
   const [voiceEngines, setVoiceEngines] = useState<JarvisVoiceEngineInfo | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [personalityMode, setPersonalityMode] = useState<"friendly" | "security">("friendly");
+  const [lastFailedQuery, setLastFailedQuery] = useState<{ text: string; isVoice: boolean } | null>(null);
+  const isTurnInFlightRef = React.useRef(false);
 
   useEffect(() => {
     // Check mic permission
@@ -137,9 +140,13 @@ export const JarvisPage: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [isListening]);
 
-  // Spacebar Push-to-Talk keyboard listener
+  // Spacebar Push-to-Talk & Escape Interruption keyboard listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleInterruptPlayback();
+        return;
+      }
       if (e.code === "Space" && !e.repeat) {
         const activeTag = (document.activeElement?.tagName || "").toLowerCase();
         if (activeTag !== "input" && activeTag !== "textarea") {
@@ -182,6 +189,8 @@ export const JarvisPage: React.FC<Props> = ({
   };
 
   const handleUserMessage = async (text: string, isVoice = false) => {
+    if (!text.trim() || isTurnInFlightRef.current) return;
+    isTurnInFlightRef.current = true;
     try {
       setIsProcessing(true);
       setJarvisState("PROCESSING");
@@ -230,22 +239,55 @@ export const JarvisPage: React.FC<Props> = ({
         onNavigatePage(res.navigation_target);
       }
 
-      if (res.speech_text && !isMuted) {
+      // Automatically configure voice engine locale to match the detected language
+      if (res.language && selectedLanguage === "auto") {
+        jarvisVoice.setLanguage(res.language);
+      }
+
+      if ((res.audio_base64 || res.speech_text) && !isMuted) {
         setJarvisState("SPEAKING");
-        if (jarvisVoice.isSpeechSynthesisSupported()) {
-          await jarvisVoice.speak(res.speech_text);
-        } else if (res.audio_base64) {
-          await jarvisVoice.playLocalAudioBase64(res.audio_base64);
+        // CRITICAL ROOT-CAUSE FIX: Prioritize backend neural WAV (audio_base64) over browser speechSynthesis
+        // Windows WebSpeech lacks Marathi/Hindi voices and frequently stalls.
+        let audioPlayed = false;
+        if (res.audio_base64) {
+          try {
+            await jarvisVoice.playLocalAudioBase64(res.audio_base64);
+            audioPlayed = true;
+          } catch (playbackErr) {
+            console.warn("Backend audio_base64 playback failed, falling back to speech synthesis:", playbackErr);
+          }
         }
+        if (!audioPlayed && res.speech_text) {
+          try {
+            await jarvisVoice.speak(res.speech_text, res.language);
+          } catch (speakErr) {
+            console.warn("Speech synthesis fallback failed:", speakErr);
+          }
+        }
+        setJarvisState("IDLE");
       } else {
         setJarvisState("IDLE");
       }
     } catch (err: any) {
       setJarvisState("ERROR");
-      setErrorMessage(err.message || "Failed to communicate with JARVIS");
-      setTimeout(() => setJarvisState("IDLE"), 4000);
+      setLastFailedQuery({ text, isVoice });
+      let clearMsg = err.message || "Failed to communicate with AMOJA AI";
+      if (clearMsg.includes("Failed to fetch") || clearMsg.includes("NetworkError") || clearMsg.includes("Network request failed")) {
+        clearMsg = "Cannot connect to AMOJA backend service (http://127.0.0.1:8000). Please ensure the backend is running.";
+      }
+      setErrorMessage(clearMsg);
+      setTimeout(() => setJarvisState("IDLE"), 5000);
     } finally {
       setIsProcessing(false);
+      isTurnInFlightRef.current = false;
+    }
+  };
+
+  const handleRetryLastMessage = () => {
+    if (lastFailedQuery) {
+      const q = lastFailedQuery;
+      setLastFailedQuery(null);
+      handleUserMessage(q.text, q.isVoice);
     }
   };
 
@@ -261,7 +303,7 @@ export const JarvisPage: React.FC<Props> = ({
           return;
         }
       } catch {}
-      await jarvisVoice.speak(text);
+      await jarvisVoice.speak(text, msg.language);
     }
   };
 
@@ -388,6 +430,8 @@ export const JarvisPage: React.FC<Props> = ({
 
   const handleInterruptPlayback = () => {
     jarvisVoice.interruptPlayback();
+    setJarvisState("IDLE");
+    setIsPaused(false);
   };
 
   return (
@@ -513,6 +557,19 @@ export const JarvisPage: React.FC<Props> = ({
             <Settings size={14} />
             <span>Voice Settings</span>
           </button>
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === "diagnostics" ? "active" : ""}`}
+            onClick={() => setActiveTab("diagnostics")}
+            style={{
+              borderColor: activeTab === "diagnostics" ? "#00e5ff" : undefined,
+              color: activeTab === "diagnostics" ? "#00e5ff" : undefined,
+              background: activeTab === "diagnostics" ? "rgba(0, 229, 255, 0.15)" : undefined
+            }}
+          >
+            <Radio size={14} style={{ color: activeTab === "diagnostics" ? "#00e5ff" : undefined }} />
+            <span>Voice Diagnostics</span>
+          </button>
         </div>
       </div>
 
@@ -620,6 +677,9 @@ export const JarvisPage: React.FC<Props> = ({
               onPlayMessageAudio={handlePlayMessageAudio}
               personalityMode={personalityMode}
               onTogglePersonalityMode={setPersonalityMode}
+              onRetry={lastFailedQuery ? handleRetryLastMessage : undefined}
+              isSpeaking={jarvisState === "SPEAKING"}
+              onStopSpeaking={handleInterruptPlayback}
             />
           </div>
         </div>
@@ -933,6 +993,18 @@ export const JarvisPage: React.FC<Props> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Tab 5: Voice Pipeline Real-Time Diagnostics HUD */}
+      {activeTab === "diagnostics" && (
+        <div className="jarvis-diagnostics-view" style={{ maxWidth: "1200px", margin: "0 auto", padding: "12px 0" }}>
+          <JarvisVoiceDiagnosticsPanel
+            conversationState={jarvisState}
+            currentTranscript={transcription}
+            errorMessage={errorMessage}
+            onRetryConnection={loadBriefing}
+          />
         </div>
       )}
     </div>
