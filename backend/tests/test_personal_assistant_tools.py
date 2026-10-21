@@ -1,7 +1,8 @@
 # backend/tests/test_personal_assistant_tools.py
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 from app.db.database import init_db
 from app.main import app
@@ -11,6 +12,10 @@ from app.jarvis.personal_assistant import (
     add_todo_item, list_todo_items, toggle_todo_item,
     store_user_memory, list_user_memories, delete_user_memory, clear_all_user_memories,
     launch_approved_application, search_workspace_files,
+    close_approved_application, open_website_or_search, search_or_play_youtube,
+    search_authorized_files, open_authorized_file_or_folder, organize_authorized_files,
+    prepare_whatsapp_message, get_windows_system_status, open_windows_settings,
+    analyze_suspicious_processes, prepare_firewall_rule_change, execute_multistep_task,
     APPROVED_APPLICATIONS
 )
 from app.jarvis.jarvis_memory import search_conversation_history, append_message, get_or_create_session
@@ -242,3 +247,224 @@ def test_system_status_api(auth_headers):
     assert "local_asr" in data["providers"]
     assert "local_tts" in data["providers"]
     assert "approved_apps" in data
+
+
+# --- 9. Application Closing Guardrails ---
+def test_close_approved_application():
+    mock_proc = MagicMock()
+    mock_proc.info = {"pid": 1234, "name": "notepad.exe"}
+    with patch("psutil.process_iter", return_value=[mock_proc]):
+        res = close_approved_application("notepad")
+        assert res.get("success") is True
+        assert res["status"] in {"TERMINATED", "NOT_RUNNING"}
+
+
+def test_close_unauthorized_application():
+    res = close_approved_application("malicious_tool.exe")
+    assert "error" in res
+    assert "approved" in res["error"]
+
+
+# --- 10. Web and YouTube Browsing Safe Tools ---
+def test_open_website_or_search():
+    with patch("webbrowser.open") as mock_web:
+        # Search query
+        res = open_website_or_search("python asyncio tutorial")
+        assert res["success"] is True
+        assert res["action_type"] == "WEB_SEARCH"
+        assert "google.com" in res["target_url"]
+
+        # Valid website URL
+        res2 = open_website_or_search("https://github.com")
+        assert res2["success"] is True
+        assert res2["action_type"] == "OPEN_URL"
+        assert res2["target_url"] == "https://github.com"
+        assert mock_web.call_count == 2
+
+
+def test_open_website_blocks_malicious_schemes():
+    bad_urls = [
+        "javascript:alert(1)",
+        "file:///C:/Windows/System32/cmd.exe",
+        "data:text/html,<script>alert(1)</script>",
+        "calc.exe; notepad.exe"
+    ]
+    for bad in bad_urls:
+        res = open_website_or_search(bad)
+        assert res["success"] is False
+        assert "error" in res
+
+
+def test_search_or_play_youtube():
+    with patch("webbrowser.open") as mock_web:
+        res = search_or_play_youtube("lofi hip hop radio")
+        assert res["success"] is True
+        assert "youtube.com/results?search_query=" in res["youtube_url"]
+        mock_web.assert_called_once()
+
+
+# --- 11. Scoped Authorized File Operations ---
+def test_search_authorized_files():
+    res = search_authorized_files("main.py", scope="workspace")
+    assert "error" not in res
+    assert res["total_matches"] >= 1
+    assert any("main.py" in m["name"] for m in res["matches"])
+
+
+def test_open_authorized_file_or_folder():
+    with patch("os.startfile", create=True) as mock_start, patch("subprocess.Popen") as mock_popen:
+        res = open_authorized_file_or_folder("requirements.txt")
+        assert res["success"] is True
+        assert res["status"] == "OPENED"
+
+
+def test_organize_authorized_files_move_confirmation():
+    res = organize_authorized_files(
+        operation="move",
+        source_path="requirements.txt",
+        target_path="requirements_backup.txt"
+    )
+    assert res.get("requires_confirmation") is True
+    assert res["action_type"] == "ORGANIZE_FILE_MOVE"
+    assert res["risk_level"] == "MEDIUM"
+    assert "action_id" in res
+
+
+def test_organize_authorized_files_create_folder():
+    new_dir = Path("test_scratch_folder").resolve()
+    if new_dir.exists():
+        new_dir.rmdir()
+    try:
+        res = organize_authorized_files(
+            operation="create_folder",
+            source_path=str(new_dir)
+        )
+        assert res["success"] is True
+        assert new_dir.exists()
+    finally:
+        if new_dir.exists():
+            new_dir.rmdir()
+
+
+# --- 12. WhatsApp Automation Verification & Human Confirmation ---
+def test_prepare_whatsapp_message_confirmation():
+    res = prepare_whatsapp_message(
+        recipient="+919876543210",
+        message="Hello, SOC team! Daily health check report is ready."
+    )
+    assert res.get("requires_confirmation") is True
+    assert res["action_type"] == "SEND_WHATSAPP_MESSAGE"
+    assert res["target_id"] == "+919876543210"
+    assert res["risk_level"] == "HIGH"
+    assert "action_id" in res
+    assert "idempotency_key" in res
+
+
+def test_prepare_whatsapp_message_validation():
+    # Empty recipient
+    res1 = prepare_whatsapp_message("", "Hello")
+    assert res1.get("success") is False
+    assert "error" in res1
+
+    # Empty message
+    res2 = prepare_whatsapp_message("9876543210", "")
+    assert res2.get("success") is False
+    assert "error" in res2
+
+
+# --- 13. Windows System Status & Settings ---
+def test_get_windows_system_status():
+    status = get_windows_system_status()
+    assert status.get("status") == "HEALTHY"
+    assert "cpu" in status
+    assert "memory" in status
+    assert "disk" in status
+    assert "battery" in status
+    assert "uptime" in status
+
+
+def test_open_windows_settings():
+    with patch("os.startfile", create=True) as mock_start:
+        res = open_windows_settings("network")
+        assert res["success"] is True
+        assert res["page"] == "network"
+        assert res["uri"] == "ms-settings:network"
+
+    # Invalid setting page
+    bad_res = open_windows_settings("non_existent_page_12345")
+    assert bad_res.get("success") is False
+    assert "error" in bad_res
+    assert "allowed_pages" in bad_res
+
+
+# --- 14. Suspicious Process Analysis ---
+def test_analyze_suspicious_processes():
+    res = analyze_suspicious_processes(top_n=10)
+    assert res.get("status") == "COMPLETED"
+    assert "total_processes_scanned" in res
+    assert "findings" in res
+    assert isinstance(res["findings"], list)
+
+
+# --- 15. Host Firewall Configuration Change Confirmation ---
+def test_prepare_firewall_rule_change_confirmation():
+    res = prepare_firewall_rule_change(
+        action="add_block_rule",
+        rule_name="AMOJA_Block_Port_4444",
+        direction="in",
+        port=4444,
+        protocol="TCP"
+    )
+    assert res.get("requires_confirmation") is True
+    assert res["action_type"] == "FIREWALL_ADD_BLOCK_RULE"
+    assert res["target_id"] == "AMOJA_Block_Port_4444"
+    assert res["risk_level"] == "HIGH"
+    assert res["details"]["port"] == 4444
+
+
+def test_prepare_firewall_rule_change_invalid_args():
+    res = prepare_firewall_rule_change(
+        action="invalid_action",
+        rule_name="bad_rule"
+    )
+    assert res.get("success") is False
+    assert "error" in res
+
+
+# --- 16. Multi-Step Task Execution ---
+def test_execute_multistep_task():
+    user = {"username": "admin", "role": "admin"}
+    steps = [
+        {
+            "description": "Create a note for SOC meeting",
+            "tool_name": "create_note",
+            "arguments": {"title": "MultiStep Note", "content": "SOC Meeting notes."}
+        },
+        {
+            "description": "Add todo for SOC meeting",
+            "tool_name": "add_todo_item",
+            "arguments": {"task": "Review firewall rules"}
+        }
+    ]
+    res = execute_multistep_task("Morning SOC Setup", steps, user)
+    assert res.get("multistep_status") == "COMPLETED"
+    assert res["total_steps"] == 2
+    assert len(res["steps_results"]) == 2
+    assert res["steps_results"][0]["success"] is True
+    assert res["steps_results"][1]["success"] is True
+
+
+def test_execute_multistep_task_pauses_on_confirmation():
+    user = {"username": "admin", "role": "admin"}
+    steps = [
+        {
+            "description": "Prepare WhatsApp notice",
+            "tool_name": "prepare_whatsapp_message",
+            "arguments": {"recipient": "+919876543210", "message": "Incident detected"}
+        }
+    ]
+    res = execute_multistep_task("Incident Notification Task", steps, user)
+    assert res.get("multistep_status") == "PAUSED_FOR_CONFIRMATION"
+    assert res["requires_confirmation"] is True
+    assert res["paused_at_step"] == 1
+

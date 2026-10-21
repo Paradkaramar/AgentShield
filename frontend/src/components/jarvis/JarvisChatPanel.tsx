@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   Send, Bot, User as UserIcon, ShieldAlert, CheckCircle2, XCircle,
   Terminal, Globe, Trash2, Mic, AlertCircle, ChevronDown, ChevronUp, Copy, Check,
-  Volume2, Play, Pause, Download, RefreshCw, Square
+  Volume2, Play, Pause, Download, RefreshCw, Square, MessageSquare, Folder, Monitor, Flame
 } from "lucide-react";
 import { JarvisMessage, JarvisLanguage, JarvisConfirmationRequest } from "../../types";
 
@@ -89,16 +89,23 @@ export const JarvisChatPanel: React.FC<Props> = ({
   };
 
   const quickPrompts = [
-    { label: "Security Summary", text: "Give me the security summary" },
-    { label: "Device Security", text: "Show device security status" },
-    { label: "What about its connections?", text: "What about its open ports?" },
+    // Windows Personal Assistant Directives
+    { label: "💻 Check Windows Status", text: "Check my Windows system status, battery, and memory" },
+    { label: "📝 Take a Note", text: "Take a note: Review AgentShield and personal assistant release" },
+    { label: "⏰ Set Reminder", text: "Remind me to check SOC incident logs at 5 PM" },
+    { label: "📂 Search Files in Documents", text: "Search authorized files in my documents" },
+    { label: "🎵 Play Lofi on YouTube", text: "Play lofi chill beats on YouTube" },
+    { label: "💬 Send WhatsApp", text: "Send WhatsApp message to +919876543210: Hello from Amoja AI" },
+    { label: "🖥️ Mera PC check karo (Hinglish)", text: "Amoja, mera computer aur battery status check karo" },
+    { label: "माझा कॉम्प्युटर तपासा (मराठी)", text: "अमोजा, माझा कॉम्प्युटर आणि बॅटरी स्टेटस तपासा" },
+    // AgentShield Cybersecurity Directives
+    { label: "🛡️ Security Summary", text: "Give me the security summary" },
+    { label: "🔍 Analyze Suspicious Processes", text: "Analyze suspicious processes on my computer" },
+    { label: "🔥 Check Firewall Status", text: "Show firewall status and active rules" },
+    { label: "🌐 Network Monitoring", text: "Show network monitoring status and open ports" },
     { label: "सगळे धोके दाखव (मराठी)", text: "Amoja, mala sagle critical threats dakhav" },
-    { label: "याच्याबद्दल सांगा (मराठी)", text: "याच्याबद्दल अधिक सांगा" },
     { label: "सारे खतरे दिखाओ (हिन्दी)", text: "Amoja, mujhe saare critical threats dikhao" },
-    { label: "इसके बारे में बताओ (हिन्दी)", text: "इसके बारे में और बताओ" },
-    { label: "Prompt Injections (Hinglish)", text: "Amoja, latest prompt injection attacks check karo" },
-    { label: "Network Monitoring", text: "Show network monitoring status" },
-    { label: "Trigger Scan Now", text: "Trigger a scan now" }
+    { label: "⚡ Trigger Scan Now", text: "Trigger a network scan now" }
   ];
 
   return (
@@ -107,7 +114,7 @@ export const JarvisChatPanel: React.FC<Props> = ({
       <div className="chat-panel-header">
         <div className="chat-branding">
           <Bot size={16} className="jarvis-icon-glow" style={{ color: "#76b900" }} />
-          <span>AMOJA AI // DGX CONVERSATIONAL CORE</span>
+          <span>AMOJA AI // PERSONAL ASSISTANT & AGENTSHIELD SOC</span>
           <span className="female-voice-tag" style={{ fontSize: "10px", padding: "2px 7px", background: "rgba(118, 185, 0, 0.18)", color: "#76b900", borderRadius: "4px", marginLeft: "8px", border: "1px solid rgba(118, 185, 0, 0.4)", fontWeight: 700, letterSpacing: "0.5px" }}>
             FEMALE VOICE
           </span>
@@ -191,8 +198,8 @@ export const JarvisChatPanel: React.FC<Props> = ({
             <div className="empty-radar-icon">
               <Bot size={36} />
             </div>
-            <h4>AMOJA AI Autonomous Cybersecurity Defense</h4>
-            <p>Speak naturally with continuous hands-free dialogue, interruption barge-in, and multi-turn context across English, Hindi, Marathi, and Hinglish.</p>
+            <h4>AMOJA AI // Windows Personal Assistant & Cybersecurity Platform</h4>
+            <p>One unified voice and chat interface for everyday Windows personal tasks (apps, websites, YouTube, files, WhatsApp, notes, reminders, system status) and AgentShield cybersecurity platform operations across English, Hindi, Marathi, and Hinglish.</p>
 
             <div className="quick-suggestions-box">
               <span className="suggestions-title">// RECOMMENDED MULTI-TURN DIRECTIVES //</span>
@@ -291,33 +298,167 @@ export const JarvisChatPanel: React.FC<Props> = ({
                   )}
 
                   {/* Confirmation Request Card */}
-                  {m.action_required && (
-                    <div className="action-confirmation-card">
-                      <div className="card-header">
-                        <ShieldAlert size={18} className="warn-icon" />
-                        <strong>SENSITIVE ACTION REQUIRES CONFIRMATION</strong>
+                  {m.action_required && (() => {
+                    const req = m.action_required;
+                    const isWhatsApp = req.action_type === "SEND_WHATSAPP_MESSAGE";
+                    const isFirewall = req.action_type.startsWith("FIREWALL_");
+                    const isFileOp = req.action_type.startsWith("ORGANIZE_FILE_");
+
+                    if (isWhatsApp) {
+                      return (
+                        <div className="action-confirmation-card whatsapp-confirm-card" style={{ border: "1px solid #25D366", background: "rgba(37, 211, 102, 0.08)", borderRadius: "8px", padding: "14px" }}>
+                          <div className="card-header" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#25D366", marginBottom: "8px" }}>
+                            <MessageSquare size={18} />
+                            <strong>WHATSAPP MESSAGE DISPATCH // CONFIRMATION REQUIRED</strong>
+                          </div>
+                          <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "6px", marginBottom: "10px", fontSize: "12px", border: "1px solid rgba(37, 211, 102, 0.2)" }}>
+                            <div style={{ marginBottom: "4px" }}>
+                              <strong style={{ color: "#25D366" }}>Recipient: </strong>
+                              <span style={{ color: "#fff", fontWeight: 600 }}>{req.details?.recipient || req.target_id}</span>
+                            </div>
+                            {req.details?.message && (
+                              <div style={{ marginBottom: "4px" }}>
+                                <strong style={{ color: "#25D366" }}>Message Preview: </strong>
+                                <span style={{ color: "#e2e8f0", fontStyle: "italic" }}>"{req.details.message}"</span>
+                              </div>
+                            )}
+                            {req.details?.attachment_path && (
+                              <div>
+                                <strong style={{ color: "#25D366" }}>Attachment: </strong>
+                                <span style={{ color: "#94a3b8" }}>{req.details.attachment_path}</span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="card-impact" style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "12px" }}>{req.impact_explanation}</p>
+                          <div className="card-controls" style={{ display: "flex", gap: "10px" }}>
+                            <button
+                              type="button"
+                              className="btn-action-confirm"
+                              style={{ background: "#25D366", color: "#000", fontWeight: 700 }}
+                              onClick={() => onConfirmAction(req, true)}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Send WhatsApp Message</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-action-cancel"
+                              onClick={() => onConfirmAction(req, false)}
+                            >
+                              <XCircle size={14} />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isFirewall) {
+                      return (
+                        <div className="action-confirmation-card firewall-confirm-card" style={{ border: "1px solid #f59e0b", background: "rgba(245, 158, 11, 0.08)", borderRadius: "8px", padding: "14px" }}>
+                          <div className="card-header" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#f59e0b", marginBottom: "8px" }}>
+                            <Flame size={18} />
+                            <strong>FIREWALL CONFIGURATION CHANGE // HIGH RISK</strong>
+                          </div>
+                          <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "6px", marginBottom: "10px", fontSize: "12px", border: "1px solid rgba(245, 158, 11, 0.2)" }}>
+                            <div><strong style={{ color: "#f59e0b" }}>Rule Name: </strong><span>{req.details?.rule_name || req.target_id}</span></div>
+                            {req.details?.port && (
+                              <div><strong style={{ color: "#f59e0b" }}>Port: </strong><span>{req.details.port} ({req.details.protocol || "TCP"})</span></div>
+                            )}
+                            {req.details?.direction && (
+                              <div><strong style={{ color: "#f59e0b" }}>Direction: </strong><span>{req.details.direction.toUpperCase()}BOUND</span></div>
+                            )}
+                          </div>
+                          <p className="card-impact" style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "12px" }}>{req.impact_explanation}</p>
+                          <div className="card-controls" style={{ display: "flex", gap: "10px" }}>
+                            <button
+                              type="button"
+                              className="btn-action-confirm"
+                              style={{ background: "#f59e0b", color: "#000", fontWeight: 700 }}
+                              onClick={() => onConfirmAction(req, true)}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Apply Firewall Rule</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-action-cancel"
+                              onClick={() => onConfirmAction(req, false)}
+                            >
+                              <XCircle size={14} />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isFileOp) {
+                      return (
+                        <div className="action-confirmation-card file-confirm-card" style={{ border: "1px solid #38bdf8", background: "rgba(56, 189, 248, 0.08)", borderRadius: "8px", padding: "14px" }}>
+                          <div className="card-header" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#38bdf8", marginBottom: "8px" }}>
+                            <Folder size={18} />
+                            <strong>FILE OPERATION CONFIRMATION</strong>
+                          </div>
+                          <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "6px", marginBottom: "10px", fontSize: "12px", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+                            <div><strong style={{ color: "#38bdf8" }}>Operation: </strong><span>{req.details?.operation || req.action_type}</span></div>
+                            <div><strong style={{ color: "#38bdf8" }}>Source: </strong><span>{req.details?.source || req.target_id}</span></div>
+                            {(req.details?.target || req.details?.new_name) && (
+                              <div><strong style={{ color: "#38bdf8" }}>Destination: </strong><span>{req.details.target || req.details.new_name}</span></div>
+                            )}
+                          </div>
+                          <p className="card-impact" style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "12px" }}>{req.impact_explanation}</p>
+                          <div className="card-controls" style={{ display: "flex", gap: "10px" }}>
+                            <button
+                              type="button"
+                              className="btn-action-confirm"
+                              style={{ background: "#38bdf8", color: "#000", fontWeight: 700 }}
+                              onClick={() => onConfirmAction(req, true)}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Confirm File Action</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-action-cancel"
+                              onClick={() => onConfirmAction(req, false)}
+                            >
+                              <XCircle size={14} />
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="action-confirmation-card">
+                        <div className="card-header">
+                          <ShieldAlert size={18} className="warn-icon" />
+                          <strong>SENSITIVE ACTION REQUIRES CONFIRMATION</strong>
+                        </div>
+                        <p className="card-impact">{req.impact_explanation}</p>
+                        <div className="card-controls">
+                          <button
+                            type="button"
+                            className="btn-action-confirm"
+                            onClick={() => onConfirmAction(req, true)}
+                          >
+                            <CheckCircle2 size={14} />
+                            <span>Confirm Execution</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-action-cancel"
+                            onClick={() => onConfirmAction(req, false)}
+                          >
+                            <XCircle size={14} />
+                            <span>Cancel Action</span>
+                          </button>
+                        </div>
                       </div>
-                      <p className="card-impact">{m.action_required.impact_explanation}</p>
-                      <div className="card-controls">
-                        <button
-                          type="button"
-                          className="btn-action-confirm"
-                          onClick={() => onConfirmAction(m.action_required!, true)}
-                        >
-                          <CheckCircle2 size={14} />
-                          <span>Confirm Execution</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-action-cancel"
-                          onClick={() => onConfirmAction(m.action_required!, false)}
-                        >
-                          <XCircle size={14} />
-                          <span>Cancel Action</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             </div>

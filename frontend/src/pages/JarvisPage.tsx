@@ -727,19 +727,19 @@ export const JarvisPage: React.FC<Props> = ({
                   </div>
                 </div>
 
-                <div className="home-action-tile" onClick={() => handleUserMessage("Launch calculator")}>
-                  <div className="tile-icon-box"><Sparkles size={20} /></div>
+                <div className="home-action-tile" onClick={() => handleUserMessage("Check my Windows system status, battery, and memory")}>
+                  <div className="tile-icon-box"><Cpu size={20} /></div>
                   <div className="tile-text">
-                    <strong>Launch Calculator</strong>
-                    <small>Quick test approved desktop application</small>
+                    <strong>Windows System & Battery</strong>
+                    <small>Real-time CPU, RAM, disk, and battery telemetry</small>
                   </div>
                 </div>
 
-                <div className="home-action-tile" onClick={() => setActiveTab("settings")}>
-                  <div className="tile-icon-box"><Settings size={20} /></div>
+                <div className="home-action-tile" onClick={() => handleUserMessage("Analyze suspicious processes on my computer")}>
+                  <div className="tile-icon-box"><ShieldAlert size={20} /></div>
                   <div className="tile-text">
-                    <strong>Voice Diagnostics</strong>
-                    <small>Real-time audio hardware & latency test</small>
+                    <strong>Process Threat Analysis</strong>
+                    <small>Detect anomalous, masquerading or rogue binaries</small>
                   </div>
                 </div>
               </div>

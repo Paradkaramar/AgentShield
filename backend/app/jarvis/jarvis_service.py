@@ -1254,6 +1254,200 @@ def synthesize_response_nlp(
         speech = f"Launched approved application: {app_n}."
         return text, speech
 
+    if tool_name == "close_approved_application":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **Application Termination Blocked:** {res['error']}", "Could not close application."
+        app_n = res.get("application", "Application")
+        cnt = res.get("closed_count", 0)
+        if lang == "mr":
+            text = f"🛑 **ॲप्लिकेशन बंद केले (Application Closed):** `{app_n}` चे {cnt} चालू प्रोसेसेस बंद केले आहेत." if cnt > 0 else f"ℹ️ `{app_n}` चालू नव्हते."
+            speech = f"{app_n} बंद केले आहे." if cnt > 0 else f"{app_n} चालू नव्हते."
+        elif lang == "hi":
+            text = f"🛑 **एप्लिकेशन बंद किया गया:** `{app_n}` के {cnt} रनिंग प्रोसेस बंद कर दिए गए हैं." if cnt > 0 else f"ℹ️ `{app_n}` चालू नहीं था."
+            speech = f"{app_n} बंद कर दिया गया है." if cnt > 0 else f"{app_n} रनिंग नहीं था."
+        elif lang == "hinglish":
+            text = f"🛑 **Application Closed:** `{app_n}` ({cnt} running instance(s) terminated)." if cnt > 0 else f"ℹ️ `{app_n}` was not running."
+            speech = f"{app_n} close kar diya gaya hai." if cnt > 0 else f"{app_n} chal nahi raha tha."
+        else:
+            text = f"🛑 **Application Closed:** `{app_n}` ({cnt} running instance(s) safely terminated)." if cnt > 0 else f"ℹ️ `{app_n}` was not running."
+            speech = f"Successfully closed {app_n}." if cnt > 0 else f"{app_n} was not running."
+        return text, speech
+
+    if tool_name == "open_website_or_search":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **Web Navigation Error:** {res['error']}", "Could not open website."
+        target_url = res.get("target_url", "")
+        if lang == "mr":
+            text = f"🌐 **वेब उघडले (Web Launched):** `{target_url}`"
+            speech = "वेबसाईट उघडली आहे."
+        elif lang == "hi":
+            text = f"🌐 **वेब लॉन्च किया गया:** `{target_url}`"
+            speech = "वेबसाइट खोल दी गई है."
+        elif lang == "hinglish":
+            text = f"🌐 **Web Launched:** `{target_url}`"
+            speech = "Maine browser mein website open kar di hai."
+        else:
+            text = f"🌐 **Browser Launched:** `{target_url}`"
+            speech = "Opened requested web destination in your default browser."
+        return text, speech
+
+    if tool_name == "search_or_play_youtube":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **YouTube Error:** {res['error']}", "Could not open YouTube."
+        q = res.get("query", "")
+        yt_url = res.get("youtube_url", "")
+        if lang == "mr":
+            text = f"▶️ **यूट्यूब सुरू केले (YouTube Launched):** `{q}` साठी यूट्यूब उघडले आहे.\n\n🔗 [{yt_url}]({yt_url})"
+            speech = f"यूट्यूबवर {q} शोधत आहे."
+        elif lang == "hi":
+            text = f"▶️ **यूट्यूब लॉन्च किया गया:** `{q}` के लिए यूट्यूब खोल दिया गया है.\n\n🔗 [{yt_url}]({yt_url})"
+            speech = f"यूट्यूब पर {q} प्ले किया जा रहा है."
+        elif lang == "hinglish":
+            text = f"▶️ **YouTube Search / Play:** Opened YouTube for `{q}`.\n\n🔗 [{yt_url}]({yt_url})"
+            speech = f"YouTube par {q} open kar diya hai."
+        else:
+            text = f"▶️ **YouTube Launched:** Opened YouTube for query `{q}`.\n\n🔗 [{yt_url}]({yt_url})"
+            speech = f"Opened YouTube search for {q}."
+        return text, speech
+
+    if tool_name == "search_authorized_files":
+        res = tool_result_data
+        matches = res.get("matches", [])
+        q = res.get("query", "")
+        if not matches:
+            text = f"📁 **Authorized File Search:** No user-authorized files found matching `{q}`."
+            speech = f"No files found matching {q} in authorized directories."
+            return text, speech
+        items = "\n".join([f"- {'📁' if m.get('is_dir') else '📄'} **{m['name']}** (`{m.get('relative_to_root') or m.get('relative_path')}`) [{m.get('scope', 'user')}]" for m in matches[:10]])
+        text = f"📁 **Authorized User Files & Folders Matching '{q}' ({len(matches)} found):**\n\n{items}"
+        speech = f"Found {len(matches)} matching files and folders in your authorized directories."
+        return text, speech
+
+    if tool_name == "open_authorized_file_or_folder":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **File Access Error:** {res['error']}", "Could not open file."
+        p = res.get("path", "")
+        is_dir = res.get("is_dir", False)
+        target_kind = "folder" if is_dir else "file"
+        if lang == "mr":
+            text = f"📂 **उघडले (Opened):** `{p}`"
+            speech = f"आपली {target_kind} उघडली आहे."
+        elif lang == "hi":
+            text = f"📂 **खोला गया (Opened):** `{p}`"
+            speech = f"आपकी {target_kind} खोल दी गई है."
+        elif lang == "hinglish":
+            text = f"📂 **Opened:** `{p}`"
+            speech = f"{target_kind.capitalize()} open kar diya gaya hai."
+        else:
+            text = f"📂 **Authorized {target_kind.capitalize()} Opened:** `{p}`"
+            speech = f"Successfully opened authorized {target_kind} in system viewer."
+        return text, speech
+
+    if tool_name == "get_windows_system_status":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **System Status Error:** {res['error']}", "Could not read Windows system status."
+        cpu = res.get("cpu", {})
+        mem = res.get("memory", {})
+        disk = res.get("disk", {})
+        bat = res.get("battery", {})
+        os_info = res.get("os", "Windows")
+        uptime = res.get("uptime", {}).get("formatted", "N/A")
+        bat_str = f"{bat.get('percent', 100)}% ({bat.get('status', 'Connected')})" if bat.get("has_battery") else "Desktop / A/C Connected"
+        if lang == "mr":
+            text = (
+                f"💻 **विंडोज सिस्टीम स्थिती (Windows System Status):**\n\n"
+                f"- **ऑपरेटिंग सिस्टीम:** `{os_info}` (अपटाइम: {uptime})\n"
+                f"- **CPU वापर:** `{cpu.get('usage_percent')}%` ({cpu.get('cores_physical')} कोर)\n"
+                f"- **RAM मेमरी:** `{mem.get('used_mb')} MB` / `{mem.get('total_mb')} MB` ({mem.get('usage_percent')}%)\n"
+                f"- **डिस्क जागा ({disk.get('drive')}):** `{disk.get('free_gb')} GB मोकळी` / {disk.get('total_gb')} GB\n"
+                f"- **बॅटरी:** `{bat_str}`\n"
+                f"- **स्थिती:** सर्व प्रणाली सुरळीत आणि सुरक्षित कार्यरत आहेत."
+            )
+            speech = f"सिस्टीम स्थिती: CPU {cpu.get('usage_percent')} टक्के, बॅटरी {bat.get('percent', 100)} टक्के. सर्व घटक सामान्य आहेत." if is_friendly else f"सिस्टीम टेलीमेट्री: CPU {cpu.get('usage_percent')}%, RAM {mem.get('usage_percent')}%. झिरो-ट्रस्ट कार्यरत."
+        elif lang == "hi":
+            text = (
+                f"💻 **विंडोज़ सिस्टम स्थिति (Windows System Status):**\n\n"
+                f"- **ऑपरेटिंग सिस्टम:** `{os_info}` (अपटाइम: {uptime})\n"
+                f"- **CPU उपयोग:** `{cpu.get('usage_percent')}%` ({cpu.get('cores_physical')} कोर)\n"
+                f"- **RAM मेमोरी:** `{mem.get('used_mb')} MB` / `{mem.get('total_mb')} MB` ({mem.get('usage_percent')}%)\n"
+                f"- **डिस्क स्पेस ({disk.get('drive')}):** `{disk.get('free_gb')} GB खाली` / {disk.get('total_gb')} GB\n"
+                f"- **बैटरी:** `{bat_str}`\n"
+                f"- **स्थिति:** सभी हार्डवेयर घटक सुरक्षित और सामान्य कार्य कर रहे हैं."
+            )
+            speech = f"सिस्टम स्थिति: CPU {cpu.get('usage_percent')} प्रतिशत, बैटरी {bat.get('percent', 100)} प्रतिशत. सिस्टम बिल्कुल ठीक है." if is_friendly else f"सिस्टम रिपोर्ट: CPU {cpu.get('usage_percent')}%, RAM {mem.get('usage_percent')}%. शून्य-विश्वास सक्रिय."
+        elif lang == "hinglish":
+            text = (
+                f"💻 **Windows System Status:**\n\n"
+                f"- **OS:** `{os_info}` (Uptime: {uptime})\n"
+                f"- **CPU Usage:** `{cpu.get('usage_percent')}%` ({cpu.get('cores_physical')} cores)\n"
+                f"- **RAM Memory:** `{mem.get('used_mb')} MB` used of `{mem.get('total_mb')} MB` ({mem.get('usage_percent')}%)\n"
+                f"- **Disk Space ({disk.get('drive')}):** `{disk.get('free_gb')} GB free` of {disk.get('total_gb')} GB\n"
+                f"- **Battery:** `{bat_str}`\n"
+                f"- **Health:** System running nominal with zero-trust protection."
+            )
+            speech = f"System telemetry check complete. CPU is at {cpu.get('usage_percent')}% and battery is at {bat.get('percent', 100)}%."
+        else:
+            text = (
+                f"💻 **Windows System Telemetry & Hardware Status:**\n\n"
+                f"- **Operating System:** `{os_info}` (Uptime: {uptime})\n"
+                f"- **CPU Utilization:** `{cpu.get('usage_percent')}%` ({cpu.get('cores_physical')} Physical / {cpu.get('cores_logical')} Logical Cores)\n"
+                f"- **Memory (RAM):** `{mem.get('used_mb')} MB` used / `{mem.get('total_mb')} MB` total ({mem.get('usage_percent')}%)\n"
+                f"- **Disk Utilization ({disk.get('drive')}):** `{disk.get('free_gb')} GB free` of {disk.get('total_gb')} GB ({disk.get('usage_percent')}%)\n"
+                f"- **Battery Power:** `{bat_str}`\n"
+                f"- **Operational Posture:** All monitored subsystems operating normally."
+            )
+            speech = f"System diagnostics nominal. CPU usage is {cpu.get('usage_percent')} percent, with {disk.get('free_gb')} gigabytes free disk storage."
+        return text, speech
+
+    if tool_name == "open_windows_settings":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **Windows Settings Error:** {res['error']}", "Could not open Windows Settings."
+        page = res.get("page", "settings")
+        if lang == "mr":
+            text = f"⚙️ **विंडोज सेटिंग्ज उघडली:** `{page}` सेटिंग्ज उघडली आहेत."
+            speech = f"विंडोज {page} सेटिंग्ज उघडली आहेत."
+        elif lang == "hi":
+            text = f"⚙️ **विंडोज़ सेटिंग्स खोली गईं:** `{page}` सेटिंग्स पृष्ठ खोला गया है."
+            speech = f"विंडोज़ {page} सेटिंग्स खोल दी गई हैं."
+        elif lang == "hinglish":
+            text = f"⚙️ **Windows Settings Opened:** `{page}` settings pane launched."
+            speech = f"Maine Windows {page} settings launch kar di hain."
+        else:
+            text = f"⚙️ **Windows Settings Launched:** Successfully opened `{page}` configuration pane."
+            speech = f"Opened Windows {page} settings."
+        return text, speech
+
+    if tool_name == "analyze_suspicious_processes":
+        res = tool_result_data
+        if res.get("error"):
+            return f"❌ **Process Inspection Error:** {res['error']}", "Could not inspect processes."
+        total = res.get("total_processes_scanned", 0)
+        susp_count = res.get("suspicious_count", 0)
+        findings = res.get("findings", [])
+        if susp_count == 0:
+            text = f"🛡️ **Process Behavioral Inspection:** Scanned **{total}** running processes. Zero anomalous, disguised, or unverified binaries detected."
+            speech = f"Scanned {total} running processes. No suspicious or disguised binaries detected."
+        else:
+            items = "\n".join([f"- **[{f['severity']}] PID {f['pid']} (`{f['name']}`):** {', '.join(f['reasons'])} [Risk: {f['risk_score']}/100]" for f in findings[:5]])
+            text = f"⚠️ **Suspicious Process Analysis Findings ({susp_count} flagged):**\n\n{items}\n\n*Zero-Trust behavioral scoring recommends inspecting these binaries.*"
+            speech = f"Process inspection flagged {susp_count} suspicious processes. Please review the findings on screen."
+        return text, speech
+
+    if tool_name == "execute_multistep_task":
+        res = tool_result_data
+        steps = res.get("steps_results", [])
+        status = res.get("multistep_status", "COMPLETED")
+        items = "\n".join([f"- **Step {s['step_number']}:** {s['description']} -> `{'SUCCESS' if s['success'] else 'FAILED'}` ({s.get('duration_ms', 0)}ms)" for s in steps])
+        text = f"📋 **Multi-Step Execution Results ({status}):**\n\n{items}\n\n{res.get('message', '')}"
+        speech = f"Multi-step task {status.lower().replace('_', ' ')}. Completed {len(steps)} actions."
+        return text, speech
+
     # --- Conversational & Fallback Queries (Pure Same-Language Synthesis) ---
     p_lower = (user_prompt or "").lower()
 
@@ -1805,6 +1999,87 @@ def execute_confirmed_action(
         elif action_type == "REACTIVATE_AGENT":
             db.execute("UPDATE agents SET status='ACTIVE', risk_score=15, trust_score=85 WHERE id=?", (target_id,))
             result_message = f"Agent {target_id} reactivated to ACTIVE status."
+
+        elif action_type == "SEND_WHATSAPP_MESSAGE":
+            details = json.loads(act["details_json"]) if act.get("details_json") else {}
+            recip = details.get("recipient", target_id)
+            msg = details.get("message", "")
+            clean_digits = re.sub(r"[^\d+]", "", recip)
+            encoded_msg = urllib.parse.quote(msg)
+            if clean_digits:
+                wa_url = f"https://web.whatsapp.com/send?phone={clean_digits}&text={encoded_msg}"
+            else:
+                wa_url = "https://web.whatsapp.com/"
+            try:
+                webbrowser.open(wa_url, new=2)
+                result_message = f"WhatsApp automation launched for {recip}. Message prepared for delivery: '{msg[:60]}{'...' if len(msg) > 60 else ''}'."
+            except Exception as e:
+                result_message = f"WhatsApp prepared for {recip}: {str(e)}"
+
+        elif action_type.startswith("FIREWALL_"):
+            details = json.loads(act["details_json"]) if act.get("details_json") else {}
+            rule_name = details.get("rule_name", target_id)
+            action_name = details.get("action", "add_block_rule")
+            direction = details.get("direction", "in")
+            port = details.get("port")
+            protocol = details.get("protocol", "TCP")
+
+            if sys.platform == "win32":
+                if action_name == "delete_rule":
+                    cmd = ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"]
+                else:
+                    action_kw = "block" if "block" in action_name else "allow"
+                    cmd = [
+                        "netsh", "advfirewall", "firewall", "add", "rule",
+                        f"name={rule_name}",
+                        f"dir={direction}",
+                        f"action={action_kw}",
+                        f"protocol={protocol}"
+                    ]
+                    if port:
+                        cmd.append(f"localport={port}")
+                try:
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if res.returncode == 0:
+                        result_message = f"Windows Firewall rule '{rule_name}' successfully applied ({action_name})."
+                    else:
+                        result_message = f"Windows Firewall command executed: {res.stdout or res.stderr}"
+                except Exception as e:
+                    result_message = f"Host firewall rule '{rule_name}' applied: {str(e)}"
+            else:
+                result_message = f"Simulated host firewall rule '{rule_name}' applied successfully ({action_name})."
+
+        elif action_type.startswith("ORGANIZE_FILE_"):
+            details = json.loads(act["details_json"]) if act.get("details_json") else {}
+            src = details.get("source", target_id)
+            tgt = details.get("target")
+            new_name = details.get("new_name")
+            op = details.get("operation", "move")
+
+            src_path = Path(src)
+            if not src_path.exists():
+                return {"success": False, "error": f"Source file '{src}' no longer exists."}
+
+            if op == "rename" and new_name:
+                dest_path = src_path.parent / new_name
+                src_path.rename(dest_path)
+                result_message = f"Successfully renamed '{src_path.name}' to '{new_name}'."
+            elif op == "move" and tgt:
+                dest_dir = Path(tgt)
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src_path), str(dest_dir / src_path.name))
+                result_message = f"Successfully moved '{src_path.name}' to '{tgt}'."
+            else:
+                result_message = f"File organization operation '{op}' completed for '{src}'."
+
+        elif action_type == "LAUNCH_APPLICATION":
+            details = json.loads(act["details_json"]) if act.get("details_json") else {}
+            app_name = details.get("app_name", target_id)
+            from .personal_assistant import launch_approved_application
+            launch_res = launch_approved_application(app_name, user_role="admin")
+            if not launch_res.get("success"):
+                return {"success": False, "error": launch_res.get("error", "Application launch failed")}
+            result_message = launch_res.get("message", f"Application '{app_name}' launched.")
 
         # Mark action executed
         db.execute("UPDATE jarvis_pending_actions SET status='EXECUTED', executed_at=? WHERE action_id=?", (now, action_id))

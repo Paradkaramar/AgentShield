@@ -191,6 +191,7 @@ export type JarvisConfirmationRequest = {
   impact_explanation: string;
   idempotency_key: string;
   created_at: string;
+  details?: Record<string, any>;
 };
 
 export type JarvisSecurityContext = {

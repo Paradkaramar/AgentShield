@@ -17,8 +17,15 @@ from .personal_assistant import (
     create_note, search_notes, list_notes, delete_note,
     add_todo_item, list_todo_items, toggle_todo_item,
     store_user_memory, list_user_memories, delete_user_memory,
-    launch_approved_application, search_workspace_files
+    launch_approved_application, close_approved_application,
+    open_website_or_search, search_or_play_youtube,
+    search_authorized_files, search_workspace_files,
+    open_authorized_file_or_folder, organize_authorized_files,
+    prepare_whatsapp_message, get_windows_system_status,
+    open_windows_settings, analyze_suspicious_processes,
+    prepare_firewall_rule_change, execute_multistep_task
 )
+
 
 # Registry of supported tool definitions with schemas
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -356,7 +363,114 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "Launch an approved desktop application from the whitelist without arbitrary shell execution.",
         "category": "system",
         "parameters": {
-            "app_name": {"type": "string", "description": "Application name: notepad, calculator, paint, explorer, taskmgr"}
+            "app_name": {"type": "string", "description": "Application name: notepad, calculator, paint, explorer, taskmgr, edge, chrome, code"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "close_approved_application": {
+        "description": "Close running instances of an approved Windows application safely from the whitelist.",
+        "category": "system",
+        "parameters": {
+            "app_name": {"type": "string", "description": "Application to close: notepad, calculator, paint, taskmgr, edge, chrome, code"},
+            "force": {"type": "boolean", "description": "Force terminate if not responding", "default": False}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "open_website_or_search": {
+        "description": "Open an approved website URL or initiate a web search in the user's default browser.",
+        "category": "personal_assistant",
+        "parameters": {
+            "query_or_url": {"type": "string", "description": "Website URL (e.g. github.com) or search phrase"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_or_play_youtube": {
+        "description": "Search for or play music and videos on YouTube safely in the default browser.",
+        "category": "personal_assistant",
+        "parameters": {
+            "query": {"type": "string", "description": "Song title, artist, or video query"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_authorized_files": {
+        "description": "Search for files and folders safely within user-authorized directories (workspace, Documents, Downloads, Desktop).",
+        "category": "personal_assistant",
+        "parameters": {
+            "query": {"type": "string", "description": "Filename, folder name, or file extension to search"},
+            "scope": {"type": "string", "description": "Scope: workspace, documents, downloads, desktop, or all", "default": "all"},
+            "max_results": {"type": "integer", "description": "Maximum number of matches", "default": 20}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "open_authorized_file_or_folder": {
+        "description": "Open an authorized file or folder in Windows File Explorer or default viewer.",
+        "category": "personal_assistant",
+        "parameters": {
+            "filepath": {"type": "string", "description": "File or folder path"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "organize_authorized_files": {
+        "description": "Organize, move, rename, or create folders within user-authorized directories with confirmation.",
+        "category": "personal_assistant",
+        "parameters": {
+            "operation": {"type": "string", "description": "move, rename, create_folder"},
+            "source_path": {"type": "string", "description": "Source path"},
+            "target_path": {"type": "string", "description": "Destination path or new folder path", "default": ""},
+            "new_name": {"type": "string", "description": "New name if renaming", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "prepare_whatsapp_message": {
+        "description": "Prepare and verify WhatsApp message automation with mandatory confirmation before sending.",
+        "category": "sensitive_action",
+        "parameters": {
+            "recipient": {"type": "string", "description": "Phone number with country code (e.g. +91...) or contact name"},
+            "message": {"type": "string", "description": "Message text to send"},
+            "attachment_path": {"type": "string", "description": "Optional file attachment path", "default": ""}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "get_windows_system_status": {
+        "description": "Read approved Windows system status including CPU, memory, disk, battery, OS version, uptime, and network adapters.",
+        "category": "system",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "open_windows_settings": {
+        "description": "Open approved Windows Settings pages safely using ms-settings URIs.",
+        "category": "system",
+        "parameters": {
+            "setting_page": {"type": "string", "description": "network, wifi, update, privacy, firewall, display, sound, battery, storage, apps", "default": "settings"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "analyze_suspicious_processes": {
+        "description": "Inspect active Windows processes for anomalous CPU/RAM, unverified paths, and non-standard sockets.",
+        "category": "cybersecurity",
+        "parameters": {
+            "top_n": {"type": "integer", "description": "Number of processes to inspect", "default": 15}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "prepare_firewall_rule_change": {
+        "description": "Prepare approved host firewall configuration changes (block/allow port or rule) with mandatory confirmation.",
+        "category": "sensitive_action",
+        "parameters": {
+            "action": {"type": "string", "description": "add_block_rule, add_allow_rule, delete_rule"},
+            "rule_name": {"type": "string", "description": "Descriptive name of firewall rule"},
+            "direction": {"type": "string", "description": "in or out", "default": "in"},
+            "port": {"type": "integer", "description": "Port number (1-65535)", "default": 0},
+            "protocol": {"type": "string", "description": "TCP or UDP", "default": "TCP"}
+        },
+        "allowed_roles": ["admin"]
+    },
+    "execute_multistep_task": {
+        "description": "Execute a multi-step task sequentially and report verified results for each step.",
+        "category": "personal_assistant",
+        "parameters": {
+            "task_description": {"type": "string", "description": "High-level goal description"},
+            "steps": {"type": "array", "description": "Ordered list of tool call steps to execute"}
         },
         "allowed_roles": ["admin", "security_analyst", "operator"]
     }
@@ -1198,6 +1312,71 @@ def execute_launch_approved_application(db: sqlite3.Connection, params: Dict[str
     role = user.get("role", "operator") if user else "operator"
     return launch_approved_application(params.get("app_name", ""), user_role=role)
 
+def execute_close_approved_application(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    role = user.get("role", "operator") if user else "operator"
+    return close_approved_application(params.get("app_name", ""), force=params.get("force", False), user_role=role)
+
+def execute_open_website_or_search(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return open_website_or_search(params.get("query_or_url", ""))
+
+def execute_search_or_play_youtube(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return search_or_play_youtube(params.get("query", ""))
+
+def execute_search_authorized_files(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return search_authorized_files(params.get("query", ""), scope=params.get("scope"), max_results=params.get("max_results", 20))
+
+def execute_open_authorized_file_or_folder(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return open_authorized_file_or_folder(params.get("filepath", ""))
+
+def execute_organize_authorized_files(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    role = user.get("role", "operator") if user else "operator"
+    return organize_authorized_files(
+        operation=params.get("operation", "move"),
+        source_path=params.get("source_path", ""),
+        target_path=params.get("target_path"),
+        new_name=params.get("new_name"),
+        user_role=role
+    )
+
+def execute_prepare_whatsapp_message(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    role = user.get("role", "operator") if user else "operator"
+    return prepare_whatsapp_message(
+        recipient=params.get("recipient", ""),
+        message=params.get("message", ""),
+        attachment_path=params.get("attachment_path"),
+        user_role=role
+    )
+
+def execute_get_windows_system_status(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return get_windows_system_status()
+
+def execute_open_windows_settings(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return open_windows_settings(params.get("setting_page", "settings"))
+
+def execute_analyze_suspicious_processes(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return analyze_suspicious_processes(top_n=params.get("top_n", 15))
+
+def execute_prepare_firewall_rule_change(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    role = user.get("role", "admin") if user else "admin"
+    port_val = params.get("port")
+    port_int = int(port_val) if port_val and int(port_val) > 0 else None
+    return prepare_firewall_rule_change(
+        action=params.get("action", "add_block_rule"),
+        rule_name=params.get("rule_name", ""),
+        direction=params.get("direction", "in"),
+        port=port_int,
+        protocol=params.get("protocol", "TCP"),
+        user_role=role
+    )
+
+def execute_execute_multistep_task(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    u = user or {"username": "admin", "role": "admin"}
+    return execute_multistep_task(
+        task_description=params.get("task_description", "Multi-step task"),
+        steps=params.get("steps", []),
+        user=u
+    )
+
 # Mapping of tool names to their execution functions
 TOOL_HANDLERS = {
     "get_security_dashboard_metrics": execute_get_security_dashboard_metrics,
@@ -1241,7 +1420,19 @@ TOOL_HANDLERS = {
     "store_user_memory": execute_store_user_memory,
     "list_user_memories": execute_list_user_memories,
     "search_workspace_files": execute_search_workspace_files,
-    "launch_approved_application": execute_launch_approved_application
+    "launch_approved_application": execute_launch_approved_application,
+    "close_approved_application": execute_close_approved_application,
+    "open_website_or_search": execute_open_website_or_search,
+    "search_or_play_youtube": execute_search_or_play_youtube,
+    "search_authorized_files": execute_search_authorized_files,
+    "open_authorized_file_or_folder": execute_open_authorized_file_or_folder,
+    "organize_authorized_files": execute_organize_authorized_files,
+    "prepare_whatsapp_message": execute_prepare_whatsapp_message,
+    "get_windows_system_status": execute_get_windows_system_status,
+    "open_windows_settings": execute_open_windows_settings,
+    "analyze_suspicious_processes": execute_analyze_suspicious_processes,
+    "prepare_firewall_rule_change": execute_prepare_firewall_rule_change,
+    "execute_multistep_task": execute_execute_multistep_task
 }
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:

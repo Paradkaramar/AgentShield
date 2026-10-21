@@ -8,7 +8,7 @@ const os = require('os');
 const http = require('http');
 
 console.log('=======================================================');
-console.log('  AgentShield Personal Device Security Desktop Shell');
+console.log('  AMOJA AI Windows Personal Assistant & AgentShield SOC');
 console.log('  Version: 1.2.0 | Architecture: ' + os.arch() + ' | Platform: ' + process.platform);
 console.log('=======================================================');
 
@@ -21,7 +21,7 @@ function tryLaunchElectron() {
       windowsHide: false
     });
     child.on('close', (code) => {
-      console.log(`AgentShield desktop exited with code ${code}`);
+      console.log(`AMOJA AI desktop exited with code ${code}`);
       process.exit(code);
     });
     return true;
@@ -30,17 +30,17 @@ function tryLaunchElectron() {
   }
 }
 
-// Fallback: Launch default browser to AgentShield control plane
+// Fallback: Launch default browser to AMOJA AI control plane
 function launchBrowserApp() {
-  const targetUrl = 'http://localhost:5173/endpoint-security';
-  console.log(`Launching AgentShield Desktop Security Portal at: ${targetUrl}`);
+  const targetUrl = 'http://localhost:5173/jarvis';
+  console.log(`Launching AMOJA AI Unified Assistant Portal at: ${targetUrl}`);
   
   const startCmd = process.platform === 'win32' ? 'start' : (process.platform === 'darwin' ? 'open' : 'xdg-open');
   exec(`${startCmd} ${targetUrl}`, (err) => {
     if (err) {
       console.error('Failed to launch browser:', err);
     } else {
-      console.log('AgentShield Personal Device Security Platform launched successfully.');
+      console.log('AMOJA AI Windows Personal Assistant & AgentShield Platform launched successfully.');
     }
   });
 }

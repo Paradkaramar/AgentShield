@@ -21,7 +21,7 @@ function createWindow() {
     height: 880,
     minWidth: 1024,
     minHeight: 700,
-    title: 'AgentShield — Personal Device Security Platform (v1.2.0)',
+    title: 'AMOJA AI — Windows Personal Assistant & AgentShield Cybersecurity Platform',
     backgroundColor: '#0a0f1d',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -59,10 +59,10 @@ function createTray() {
   }
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'AgentShield: Active Protection', enabled: false },
+    { label: 'AMOJA AI: Assistant & Defense Active', enabled: false },
     { type: 'separator' },
     {
-      label: 'Open Dashboard',
+      label: 'Open AMOJA AI',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -73,13 +73,16 @@ function createTray() {
       }
     },
     {
-      label: 'Pause Monitoring',
+      label: 'Personal Assistant & Notes',
       click: () => {
-        // Toggle pause via local agent
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
       }
     },
     {
-      label: 'Device Permissions...',
+      label: 'AgentShield Security HUD',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -89,7 +92,7 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: 'Quit AgentShield',
+      label: 'Quit AMOJA AI',
       click: () => {
         app.isQuitting = true;
         app.quit();
@@ -97,7 +100,7 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('AgentShield Personal Device Security');
+  tray.setToolTip('AMOJA AI — Windows Personal Assistant & AgentShield Platform');
   tray.setContextMenu(contextMenu);
 }
 

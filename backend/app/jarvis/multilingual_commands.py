@@ -520,7 +520,197 @@ def parse_multilingual_intent(
             target = match.group(0)
         return "inspect_permissions", {"agent_id": target}, "Real-Time Monitor", lang
 
-    # 24. Navigation directives
+    # 28. Close Approved Desktop Application
+    close_app_patterns = [
+        "close notepad", "notepad band karo", "notepad band kara", "नोटपॅड बंद करा", "नोटपैड बंद करो",
+        "close calculator", "calc band karo", "calculator band karo", "calculator band kara", "calc band kara", "कॅल्क्युलेटर बंद करा", "कैलकुलेटर बंद करो",
+        "close paint", "paint band karo", "paint band kara", "पेंट बंद करा", "पेंट बंद करो",
+        "close edge", "edge band karo", "edge band kara", "msedge band karo",
+        "close chrome", "chrome band karo", "chrome band kara",
+        "close code", "vscode band karo", "code band kara", "vs code band karo",
+        "close task manager", "task manager band karo", "taskmgr band karo", "task manager band kara"
+    ]
+    for pattern in close_app_patterns:
+        if pattern in p or pattern in p_norm:
+            for app_k in ["notepad", "calculator", "calc", "paint", "edge", "chrome", "code", "taskmgr"]:
+                if app_k in pattern:
+                    resolved_k = "calculator" if app_k == "calc" else app_k
+                    return "close_approved_application", {"app_name": resolved_k}, None, lang
+
+    # 29. Launch Approved Desktop Application
+    open_app_patterns = [
+        ("notepad", ["open notepad", "launch notepad", "start notepad", "notepad kholo", "notepad ughada", "नोटपॅड उघडा", "नोटपैड खोलो", "नोटपॅड सुरू करा"]),
+        ("calculator", ["open calculator", "launch calculator", "open calc", "calculator kholo", "calculator ughada", "calc kholo", "calc ughada", "कॅल्क्युलेटर उघडा", "कैलकुलेटर खोलो"]),
+        ("paint", ["open paint", "launch paint", "start paint", "paint kholo", "paint ughada", "पेंट उघडा", "पेंट खोलो"]),
+        ("explorer", ["open explorer", "open file explorer", "launch explorer", "files kholo", "explorer ughada", "फाइल एक्सप्लोरर उघडा"]),
+        ("taskmgr", ["open task manager", "launch task manager", "open taskmgr", "task manager kholo", "task manager ughada", "टास्क मॅनेजर उघडा"]),
+        ("edge", ["open edge", "launch edge", "open microsoft edge", "edge kholo", "edge ughada"]),
+        ("chrome", ["open chrome", "launch chrome", "open google chrome", "chrome kholo", "chrome ughada"]),
+        ("code", ["open code", "launch code", "open vs code", "open vscode", "code kholo", "code ughada", "vscode kholo"])
+    ]
+    for app_key, patterns in open_app_patterns:
+        if any(pat in p or pat in p_norm for pat in patterns):
+            return "launch_approved_application", {"app_name": app_key}, None, lang
+
+    # 30. YouTube Play and Search
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "play on youtube", "search on youtube", "play youtube", "search youtube",
+        "youtube par chalao", "youtube par play karo", "youtube par search karo", "youtube par gaana",
+        "youtube var lava", "youtube var gaane", "youtube var shodha", "youtube var search kara",
+        "यूट्यूबवर लावा", "यूट्यूबवर गाणे लावा", "यूट्यूब पर चलाओ", "यूट्यूब पर गाना", "यूट्यूब पर सर्च करो"
+    ]) or (("youtube" in p or "यूट्यूब" in p) and any(w in p for w in ["play", "search", "chalao", "lava", "kholo", "ughada", "गाना", "गाणे"])):
+        yt_query = re.sub(r"^(?:please\s+)?(?:play\s+|search\s+|look\s+up\s+)?", "", p, flags=re.IGNORECASE)
+        yt_query = re.sub(r"(?:on\s+youtube|in\s+youtube|youtube\s+par|youtube\s+pe|youtube\s+var|यूट्यूबवर|यूट्यूब\s+पर|lava|chalao|kholo|ughada)\s*", "", yt_query, flags=re.IGNORECASE).strip()
+        return "search_or_play_youtube", {"query": yt_query or "popular music"}, None, lang
+
+    # 31. Open Website or Web Search
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "open website", "open site", "search google for", "google search", "search on google",
+        "google par search karo", "google var shodha", "website ughada", "website kholo",
+        "गूगल पर सर्च करो", "गुगलवर शोधा", "वेबसाईट उघडा", "वेबसाइट खोलो"
+    ]) or re.search(r"\bopen\s+(?:https?:\/\/)?(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|in|edu|gov)\b", p):
+        web_q = re.sub(r"^(?:please\s+)?(?:open\s+website\s+|open\s+site\s+|search\s+google\s+for\s+|google\s+search\s+|search\s+on\s+google\s+|google\s+par\s+search\s+karo\s+|google\s+var\s+shodha\s+|open\s+)", "", p, flags=re.IGNORECASE).strip()
+        return "open_website_or_search", {"query_or_url": web_q or "https://www.google.com"}, None, lang
+
+    # 32. WhatsApp Message Automation
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "send whatsapp message", "send a whatsapp", "whatsapp message", "whatsapp message bhejo",
+        "whatsapp par message", "whatsapp var message", "whatsapp sandesh", "whatsapp bhejo",
+        "व्हाट्सॲपवर मेसेज पाठवा", "व्हाट्सएप पर मैसेज भेजो", "व्हाट्सॲप मेसेज", "व्हाट्सएप मैसेज"
+    ]):
+        # Extract recipient and message body
+        recip = ""
+        msg_body = "Hello from AMOJA AI Assistant"
+        recip_match = re.search(r"(?:to|ko|la|पाठवा|भेजो)\s+([+0-9a-zA-Z_\s]+?)(?:\s+(?:saying|message|ki|म्हणून)\s+(.*))?$", p)
+        if recip_match:
+            recip = recip_match.group(1).strip()
+            if recip_match.group(2):
+                msg_body = recip_match.group(2).strip()
+        return "prepare_whatsapp_message", {"recipient": recip or "Rahul", "message": msg_body}, None, lang
+
+    # 33. Windows System Status (Battery, CPU, RAM, Disk, Uptime)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "windows system status", "system status", "battery status", "battery percentage",
+        "how much battery", "check battery", "battery kitni hai", "battery kiti aahe", "battery status sanga",
+        "cpu usage", "ram usage", "memory usage", "disk space", "kitna ram free hai", "disk free kitna hai",
+        "बॅटरी किती आहे", "बॅटरी स्टेटस सांगा", "बैटरी कितनी बची है", "सीपीयू यूसेज बताओ", "रॅम किती शिल्लक आहे",
+        "सिस्टम स्टेटस बताओ", "सिस्टम स्थिती सांगा"
+    ]):
+        return "get_windows_system_status", {}, "Device Security", lang
+
+    # 34. Windows Settings
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "open windows settings", "open settings", "open wifi settings", "open network settings",
+        "open update settings", "open firewall settings", "open display settings", "open sound settings",
+        "settings kholo", "settings ughada", "wifi settings kholo", "network settings kholo",
+        "सेटिंग्ज उघडा", "सेटिंग्स खोलो", "वायफाय सेटिंग्ज उघडा", "नेटवर्क सेटिंग्स खोलो", "विंडोज सेटिंग्स खोलो"
+    ]):
+        setting_target = "settings"
+        for sk in ["wifi", "network", "update", "firewall", "display", "sound", "bluetooth", "battery", "storage", "privacy", "apps"]:
+            if sk in p:
+                setting_target = sk
+                break
+        return "open_windows_settings", {"setting_page": setting_target}, None, lang
+
+    # 35. Process Analysis & Suspicious Process Inspection
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "analyze suspicious processes", "analyze processes", "check running processes", "inspect processes",
+        "suspicious processes", "suspicious processes dikhao", "shakkaspad processes tapasa", "sandigdh processes",
+        "संशयास्पद प्रोसेसेस तपासा", "संदिग्ध प्रोसेसेस चेक करो", "चालू प्रोसेसेस तपासा", "प्रोसेसेस तपासा", "प्रोसेस चेक करो"
+    ]):
+        return "analyze_suspicious_processes", {"top_n": 15}, "Real-Time Monitor", lang
+
+    # 36. Firewall Rule Changes (Strict Permission Guardrail)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "block port on firewall", "firewall par block", "firewall var block", "add firewall rule",
+        "block port", "फायरवॉलवर पोर्ट ब्लॉक करा", "फायरवॉल पर पोर्ट ब्लॉक करो"
+    ]):
+        port_num = 8080
+        match_port = re.search(r"port\s+(\d+)", p)
+        if match_port:
+            port_num = int(match_port.group(1))
+        return "prepare_firewall_rule_change", {
+            "action": "add_block_rule",
+            "rule_name": f"AMOJA_Block_Port_{port_num}",
+            "direction": "in",
+            "port": port_num,
+            "protocol": "TCP"
+        }, "Firewall", lang
+
+    # 37. Authorized File Search & Open
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "search authorized files", "search files in documents", "search my documents", "search my downloads",
+        "find file in desktop", "file dhundo", "file shodha", "फाइल शोधा", "फाइल ढूंढो"
+    ]):
+        fq = re.sub(r"^(?:please\s+)?(?:search\s+authorized\s+files\s+|search\s+files\s+(?:in\s+)?|find\s+file\s+|file\s+dhundo\s+|file\s+shodha\s+)", "", p, flags=re.IGNORECASE).strip()
+        return "search_authorized_files", {"query": fq or "report", "scope": "all"}, None, lang
+
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "open file", "open document", "open folder", "file ughada", "folder ughada", "file kholo", "folder kholo",
+        "फाइल उघडा", "फोल्डर उघडा", "फाइल खोलो", "फ़ोल्डर खोलो"
+    ]):
+        f_target = re.sub(r"^(?:please\s+)?(?:open\s+file\s+|open\s+document\s+|open\s+folder\s+|file\s+ughada\s+|file\s+kholo\s+)", "", p, flags=re.IGNORECASE).strip()
+        return "open_authorized_file_or_folder", {"filepath": f_target or "README.md"}, None, lang
+
+    # 38. Reminders (Multilingual)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "remind me to", "set a reminder", "create reminder", "remind me", "add reminder",
+        "mala aathvan kara", "aathvan karun dya", "aathvan kara", "मला आठवण करा", "आठवण करून द्या",
+        "mujhe yaad dilao", "yaad dilana", "reminder set karo", "मुझे याद दिलाओ", "रिमाइंडर सेट करो"
+    ]):
+        rem_title = re.sub(r"^(?:please\s+)?(?:remind\s+me\s+to|set\s+a\s+reminder\s+(?:for|to)?|create\s+reminder|remind\s+me|add\s+reminder|mala\s+aathvan\s+kara\s+ki|mujhe\s+yaad\s+dilao\s+ki|reminder\s+set\s+karo\s+ki|मला\s+आठवण\s+करा\s+|मुझे\s+याद\s+दिलाओ\s+)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "create_reminder", {"title": rem_title or "Personal task", "due_time": "Soon"}, None, lang
+
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "show my reminders", "list reminders", "what are my reminders", "my reminders", "reminders dikhao",
+        "reminders dakhav", "majhe reminders dakhav", "मेरे रिमाइंडर्स दिखाओ", "माझे रिमाइंडर्स दाखवा", "रिमाइंडर्स दाखवा", "रिमाइंडर दिखाओ"
+    ]):
+        return "list_reminders", {"include_completed": False}, None, lang
+
+    # 39. Notes (Multilingual)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "take a note", "save note", "create note", "write note", "note down",
+        "ek note likho", "ek note liha", "note liha", "एक नोट लिहा", "एक नोट लिखो", "नोट लिहून ठेवा"
+    ]):
+        note_content = re.sub(r"^(?:please\s+)?(?:take\s+a\s+note(?:\s+that|:)?|save\s+note(?:\s+that|:)?|create\s+note|write\s+note|note\s+down|ek\s+note\s+likho|ek\s+note\s+liha|एक\s+नोट\s+लिहा|एक\s+नोट\s+लिखो)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "create_note", {"title": note_content[:30] or "Quick Note", "content": note_content or "Note"}, None, lang
+
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "search my notes", "find note", "search notes", "show my notes", "list notes", "notes dikhao",
+        "notes dakhav", "majhe notes dakhav", "माझे नोट्स दाखवा", "मेरे नोट्स दिखाओ", "नोट्स दाखवा", "नोट्स दिखाओ"
+    ]):
+        q = re.sub(r"^(?:search\s+(?:my\s+)?notes\s+(?:for\s+)?|find\s+note\s+|show\s+(?:my\s+)?notes|list\s+notes|notes\s+dikhao|notes\s+dakhav)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "search_notes", {"query": q}, None, lang
+
+    # 40. To-Dos (Multilingual)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "add to my todo", "add todo", "add task", "new todo", "todo mein add karo",
+        "todo madhe add kara", "task add kara", "टास्क ॲड करा", "टास्क ऐड करो", "टू-डू मध्ये जोडा"
+    ]):
+        task_desc = re.sub(r"^(?:please\s+)?(?:add\s+to\s+(?:my\s+)?todo(?:\s+list)?(?:\s+that|:)?|add\s+todo|add\s+task|new\s+todo|todo\s+mein\s+add\s+karo|todo\s+madhe\s+add\s+kara)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "add_todo_item", {"task": task_desc or "New task", "priority": "NORMAL"}, None, lang
+
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "show my todo", "list todos", "what is on my todo", "my todo list", "todo list dikhao", "tasks dikhao",
+        "todo list dakhav", "majhe tasks dakhav", "माझे टास्क दाखवा", "मेरी टू-डू लिस्ट दिखाओ", "टास्क दाखवा", "टास्क दिखाओ"
+    ]):
+        return "list_todo_items", {"include_completed": True}, None, lang
+
+    # 41. User Memory (Multilingual)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "remember that", "save to memory", "store memory", "remember this", "yaad rakho", "lakshat theva",
+        "लक्षात ठेवा", "याद रखो", "हे लक्षात ठेवा", "यह याद रखो"
+    ]):
+        mem_text = re.sub(r"^(?:please\s+)?(?:remember\s+that|save\s+to\s+memory|store\s+memory|remember\s+this|yaad\s+rakho|lakshat\s+theva)\s*", "", p, flags=re.IGNORECASE).strip()
+        return "store_user_memory", {"key": mem_text[:30] or "custom_fact", "value": mem_text}, None, lang
+
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "what do you remember", "list memories", "show memories", "stored memories", "kya yaad hai", "kay lakshat aahe",
+        "काय लक्षात आहे", "क्या याद है", "मेमरी दाखवा", "मेमोरी दिखाओ"
+    ]):
+        return "list_user_memories", {}, None, lang
+
+    # 42. Navigation directives
     nav_map = {
         "overview": ["overview", "डॅशबोर्ड", "अवलोकन"],
         "Real-Time Monitor": ["real-time", "monitor", "मॉनिटर", "निरीक्षण"],
