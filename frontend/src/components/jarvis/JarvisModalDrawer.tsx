@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { X, Maximize2, Minimize2, Cpu, Volume2, Shield, Radio, Square } from "lucide-react";
+import { X, Maximize2, Minimize2, Cpu, Volume2, Shield, Radio, Square, Sparkles } from "lucide-react";
 import { JarvisOrb } from "./JarvisOrb";
 import { JarvisWaveform } from "./JarvisWaveform";
 import { JarvisMicButton } from "./JarvisMicButton";
@@ -398,47 +398,32 @@ export const JarvisModalDrawer: React.FC<Props> = ({
             {/* Optional "Hey Amoja" Wake-Word Header Toggle */}
             <button
               type="button"
-              className="btn-window-ctrl"
+              className={`btn-window-pill ${isWakeWordEnabled ? "active-wake" : ""}`}
               onClick={handleToggleWakeWord}
               title={isWakeWordEnabled ? "Wake word active: say 'Hey Amoja' to command assistant" : "Enable 'Hey Amoja' wake-word activation"}
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-                padding: "4px 8px",
-                borderRadius: "4px",
-                background: isWakeWordEnabled ? "rgba(56, 189, 248, 0.25)" : "rgba(255, 255, 255, 0.08)",
-                border: isWakeWordEnabled ? "1px solid #38bdf8" : "1px solid rgba(255, 255, 255, 0.15)",
-                color: isWakeWordEnabled ? "#38bdf8" : "#cbd5e1",
-                fontSize: "11px",
-                fontWeight: 600,
-                cursor: "pointer"
+                background: isWakeWordEnabled ? "rgba(118, 185, 0, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                border: isWakeWordEnabled ? "1px solid #76b900" : "1px solid rgba(255, 255, 255, 0.15)",
+                color: isWakeWordEnabled ? "#76b900" : "#cbd5e1"
               }}
             >
-              <span>{isWakeWordEnabled ? "WAKE: HEY AMOJA" : "WAKE: OFF"}</span>
+              <Sparkles size={13} style={{ color: isWakeWordEnabled ? "#76b900" : undefined }} />
+              <span>{isWakeWordEnabled ? "HEY AMOJA: ON" : "WAKE: OFF"}</span>
             </button>
 
             {/* Hands-Free Continuous Voice Toggle */}
             <button
               type="button"
-              className="btn-window-ctrl"
+              className={`btn-window-pill ${isContinuousVoice ? "active-voice" : ""}`}
               onClick={handleToggleContinuousVoice}
               title={isContinuousVoice ? "Hands-free continuous conversation active. Click to disable." : "Enable hands-free continuous two-way conversation mode"}
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "5px",
-                padding: "4px 8px",
-                borderRadius: "4px",
-                background: isContinuousVoice ? "rgba(16, 185, 129, 0.25)" : "rgba(255, 255, 255, 0.08)",
-                border: isContinuousVoice ? "1px solid #10b981" : "1px solid rgba(255, 255, 255, 0.15)",
-                color: isContinuousVoice ? "#10b981" : "#cbd5e1",
-                fontSize: "11px",
-                fontWeight: 600,
-                cursor: "pointer"
+                background: isContinuousVoice ? "rgba(0, 255, 136, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                border: isContinuousVoice ? "1px solid #00ff88" : "1px solid rgba(255, 255, 255, 0.15)",
+                color: isContinuousVoice ? "#00ff88" : "#cbd5e1"
               }}
             >
-              <Radio size={13} style={{ color: isContinuousVoice ? "#10b981" : "#94a3b8" }} />
+              <Radio size={13} style={{ color: isContinuousVoice ? "#00ff88" : "#94a3b8" }} />
               <span>{isContinuousVoice ? "LIVE VOICE ON" : "HANDS-FREE"}</span>
             </button>
 
@@ -446,21 +431,13 @@ export const JarvisModalDrawer: React.FC<Props> = ({
             {jarvisState === "SPEAKING" && (
               <button
                 type="button"
-                className="btn-window-ctrl"
+                className="btn-window-pill"
                 onClick={handleInterruptPlayback}
                 title="Barge-in / Interrupt AMOJA speaking immediately"
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
                   background: "rgba(239, 68, 68, 0.25)",
                   border: "1px solid #ef4444",
-                  color: "#ef4444",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  cursor: "pointer"
+                  color: "#ef4444"
                 }}
               >
                 <Square size={11} fill="currentColor" />

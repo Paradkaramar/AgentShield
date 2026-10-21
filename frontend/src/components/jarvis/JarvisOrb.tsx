@@ -47,7 +47,7 @@ export const JarvisOrb: React.FC<Props> = ({
   return (
     <div
       className={`jarvis-orb-container state-${state.toLowerCase()} ${interactive ? "clickable" : ""}`}
-      style={{ width: size, height: size }}
+      style={{ width: "100%", maxWidth: `${size}px`, aspectRatio: "1 / 1", height: "auto" }}
       onClick={interactive ? onClick : undefined}
       title={interactive ? "Click to toggle JARVIS voice input" : undefined}
       role={interactive ? "button" : undefined}

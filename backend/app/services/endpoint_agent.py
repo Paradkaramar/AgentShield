@@ -514,12 +514,15 @@ class EndpointAgent:
             }
 
         target_path = Path(filepath)
+        if not target_path.exists() and (Path("..") / filepath).exists():
+            target_path = (Path("..") / filepath).resolve()
         if not target_path.exists() or not target_path.is_file():
             return {
                 "filepath": filepath,
                 "error": "File does not exist or is not a regular file.",
                 "scanned": False
             }
+
 
         # Size check (cap at 50MB)
         file_size = target_path.stat().st_size

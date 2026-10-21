@@ -609,3 +609,62 @@ export type EnrollmentToken = {
   created_at: string;
 };
 
+// Personal Assistant & User-Controlled Memory Types
+export interface JarvisReminder {
+  id: number;
+  user_id: string;
+  title: string;
+  due_time?: string;
+  priority: string;
+  completed: boolean | number;
+  created_at: string;
+}
+
+export interface JarvisNote {
+  id: number;
+  user_id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JarvisTodo {
+  id: number;
+  user_id: string;
+  task: string;
+  completed: boolean | number;
+  priority: string;
+  created_at: string;
+}
+
+export interface JarvisMemory {
+  id: number;
+  user_id: string;
+  memory_key: string;
+  memory_value: string;
+  category: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JarvisSystemStatus {
+  status: string;
+  zero_trust_status: string;
+  cloud_processing_consent: boolean;
+  local_mode_active: boolean;
+  providers: Record<string, {
+    name: string;
+    available: boolean;
+    status: string;
+    mode?: string;
+    languages?: string[];
+    requires_consent?: boolean;
+    consent_granted?: boolean;
+  }>;
+  approved_apps: string[];
+  security_safeguards: Record<string, boolean>;
+}
+
+

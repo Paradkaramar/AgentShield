@@ -1,8 +1,8 @@
-// frontend/src/pages/JarvisPage.tsx
 import React, { useState, useEffect } from "react";
 import {
   ShieldAlert, Bot, Mic, Cpu, Radio, Activity,
-  Settings, RefreshCw, Volume2, ShieldCheck, Terminal, Compass, Sparkles, Square
+  Settings, RefreshCw, Volume2, ShieldCheck, Terminal, Compass, Sparkles, Square,
+  Home, MessageSquare, Wrench, Shield, CheckSquare, Brain
 } from "lucide-react";
 import { JarvisOrb } from "../components/jarvis/JarvisOrb";
 import { JarvisWaveform } from "../components/jarvis/JarvisWaveform";
@@ -10,6 +10,7 @@ import { JarvisMicButton } from "../components/jarvis/JarvisMicButton";
 import { JarvisSecurityHUD } from "../components/jarvis/JarvisSecurityHUD";
 import { JarvisChatPanel } from "../components/jarvis/JarvisChatPanel";
 import { JarvisVoiceDiagnosticsPanel } from "../components/jarvis/JarvisVoiceDiagnosticsPanel";
+import { JarvisMemoryPanel } from "../components/jarvis/JarvisMemoryPanel";
 import { jarvisVoice } from "../components/jarvis/JarvisVoiceEngine";
 import {
   JarvisState, JarvisLanguage, JarvisMessage, JarvisBriefing,
@@ -20,6 +21,8 @@ import {
   getJarvisPreferences, saveJarvisPreferences, clearJarvisHistory,
   getJarvisTools, getJarvisVoiceEngines, synthesizeAudioJson
 } from "../api";
+
+export type JarvisTab = "home" | "chat" | "memory" | "tools" | "agentshield" | "settings";
 
 interface Props {
   onNavigatePage: (page: string) => void;
@@ -51,12 +54,13 @@ export const JarvisPage: React.FC<Props> = ({
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [preferences, setPreferences] = useState<JarvisPreferences | null>(null);
   const [toolsList, setToolsList] = useState<Record<string, any>>({});
-  const [activeTab, setActiveTab] = useState<"terminal" | "briefing" | "tools" | "settings" | "diagnostics">("terminal");
+  const [activeTab, setActiveTab] = useState<JarvisTab>("home");
   const [voiceEngines, setVoiceEngines] = useState<JarvisVoiceEngineInfo | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [personalityMode, setPersonalityMode] = useState<"friendly" | "security">("friendly");
   const [lastFailedQuery, setLastFailedQuery] = useState<{ text: string; isVoice: boolean } | null>(null);
   const isTurnInFlightRef = React.useRef(false);
+
 
   useEffect(() => {
     // Check mic permission
@@ -525,21 +529,30 @@ export const JarvisPage: React.FC<Props> = ({
             </button>
           )}
 
+          {/* 6 Organized Views: Home, Chat, Memory, Tools, AgentShield, Settings */}
           <button
             type="button"
-            className={`tab-btn ${activeTab === "terminal" ? "active" : ""}`}
-            onClick={() => setActiveTab("terminal")}
+            className={`tab-btn ${activeTab === "home" ? "active" : ""}`}
+            onClick={() => setActiveTab("home")}
           >
-            <Terminal size={14} />
-            <span>Terminal & Voice</span>
+            <Sparkles size={14} />
+            <span>Home</span>
           </button>
           <button
             type="button"
-            className={`tab-btn ${activeTab === "briefing" ? "active" : ""}`}
-            onClick={() => setActiveTab("briefing")}
+            className={`tab-btn ${activeTab === "chat" ? "active" : ""}`}
+            onClick={() => setActiveTab("chat")}
           >
-            <Activity size={14} />
-            <span>Threat Briefing</span>
+            <MessageSquare size={14} />
+            <span>Chat ({messages.length})</span>
+          </button>
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === "memory" ? "active" : ""}`}
+            onClick={() => setActiveTab("memory")}
+          >
+            <Brain size={14} />
+            <span>Memory</span>
           </button>
           <button
             type="button"
@@ -547,7 +560,15 @@ export const JarvisPage: React.FC<Props> = ({
             onClick={() => setActiveTab("tools")}
           >
             <ShieldCheck size={14} />
-            <span>Tool Registry ({Object.keys(toolsList).length})</span>
+            <span>Tools ({Object.keys(toolsList).length})</span>
+          </button>
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === "agentshield" ? "active" : ""}`}
+            onClick={() => setActiveTab("agentshield")}
+          >
+            <Activity size={14} />
+            <span>AgentShield</span>
           </button>
           <button
             type="button"
@@ -555,20 +576,7 @@ export const JarvisPage: React.FC<Props> = ({
             onClick={() => setActiveTab("settings")}
           >
             <Settings size={14} />
-            <span>Voice Settings</span>
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === "diagnostics" ? "active" : ""}`}
-            onClick={() => setActiveTab("diagnostics")}
-            style={{
-              borderColor: activeTab === "diagnostics" ? "#00e5ff" : undefined,
-              color: activeTab === "diagnostics" ? "#00e5ff" : undefined,
-              background: activeTab === "diagnostics" ? "rgba(0, 229, 255, 0.15)" : undefined
-            }}
-          >
-            <Radio size={14} style={{ color: activeTab === "diagnostics" ? "#00e5ff" : undefined }} />
-            <span>Voice Diagnostics</span>
+            <span>Settings</span>
           </button>
         </div>
       </div>
@@ -588,105 +596,228 @@ export const JarvisPage: React.FC<Props> = ({
         selectedLanguage={selectedLanguage}
       />
 
-      {/* Tab 1: Terminal & Voice Command Center */}
-      {activeTab === "terminal" && (
-        <div className="jarvis-command-layout">
-          {/* Left Side: Orb, Waveform, Audio Controls & Quick Voice Action Cards */}
-          <div className="jarvis-visualizer-card">
-            <div className="orb-centerpiece-wrapper">
-              <JarvisOrb
-                state={jarvisState}
-                size={220}
-                onClick={handleToggleListen}
-                interactive={true}
-              />
-              <JarvisWaveform state={jarvisState} height={52} barCount={32} />
-              <JarvisMicButton
-                state={jarvisState}
-                isListening={isListening}
-                isMuted={isMuted}
-                isMicMuted={isMicMuted}
-                isSpeechSupported={jarvisVoice.isSpeechRecognitionSupported()}
-                isPaused={isPaused}
-                isWakeWordEnabled={isWakeWordEnabled}
-                isPushToTalkActive={isPushToTalkActive}
-                micPermissionStatus={micPermission}
-                recordingDurationSeconds={recordingDuration}
-                onToggleListen={handleToggleListen}
-                onStopListening={() => jarvisVoice.stopListening()}
-                onToggleMute={handleToggleMute}
-                onToggleMicMute={handleToggleMicMute}
-                onToggleWakeWord={handleToggleWakeWord}
-                onStartPushToTalk={handleStartPushToTalk}
-                onStopPushToTalk={handleStopPushToTalk}
-                onRequestMicPermission={handleRequestMicPermission}
-                onStopSpeaking={() => {
-                  jarvisVoice.stopSpeaking();
-                  setIsPaused(false);
-                }}
-                onPauseSpeaking={handlePauseSpeaking}
-                onResumeSpeaking={handleResumeSpeaking}
-                onReplaySpeech={handleReplaySpeech}
-              />
+      {/* View 1: Home Command Center & Assistant Orb */}
+      {activeTab === "home" && (
+        <div className="jarvis-home-overview">
+          {/* Real-time Provider & Privacy Status Strip */}
+          <div className="jarvis-provider-status-strip">
+            <div className="provider-status-pill">
+              <span className="indicator-dot" />
+              <span>Local Indic Whisper (ASR): <strong>ONLINE (On-Device)</strong></span>
             </div>
-
-            <div className="voice-capabilities-list">
-              <div className="capability-item">
-                <span className="dot active" />
-                <span>Zero-Trust Grounded Verification</span>
-              </div>
-              <div className="capability-item">
-                <span className="dot active" />
-                <span>Multilingual: Marathi (मराठी), Hindi (हिन्दी), Hinglish, English</span>
-              </div>
-              <div className="capability-item">
-                <span className="dot active" />
-                <span>Local-First Speech ASR & Piper Indic TTS (Zero Cloud Egress)</span>
-              </div>
-              <div className="capability-item">
-                <span className="dot active" />
-                <span>Human-in-the-Loop Safe Action Execution</span>
-              </div>
-              <div className="capability-item">
-                <span className="dot active" />
-                <span>SHA-256 Chained Cryptographic Audit</span>
-              </div>
+            <div className="provider-status-pill">
+              <span className="indicator-dot" />
+              <span>Piper Indic TTS: <strong>ONLINE (22.05kHz PCM)</strong></span>
+            </div>
+            <div className="provider-status-pill">
+              <span className="indicator-dot" />
+              <span>AgentShield Zero-Trust: <strong>ENFORCING</strong></span>
+            </div>
+            <div className="provider-status-pill">
+              <span className={`indicator-dot ${preferences?.cloud_processing_consent ? "standby" : ""}`} />
+              <span>Cloud Egress: <strong>{preferences?.cloud_processing_consent ? "CONSENT GRANTED" : "BLOCKED (Local Airgap)"}</strong></span>
             </div>
           </div>
 
-          {/* Right Side: Chat Panel & Directive Stream */}
-          <div className="jarvis-stream-card">
-            <JarvisChatPanel
-              messages={messages}
-              onSendMessage={handleUserMessage}
-              onConfirmAction={handleConfirmAction}
-              onClearHistory={handleClearHistory}
-              selectedLanguage={selectedLanguage}
-              onSelectLanguage={(lang) => {
-                setSelectedLanguage(lang);
-                jarvisVoice.setLanguage(lang);
-                if (preferences) {
-                  const updated = { ...preferences, default_language: lang };
-                  setPreferences(updated);
-                  saveJarvisPreferences(updated).catch(() => {});
-                }
-              }}
-              isProcessing={isProcessing}
-              transcription={transcription}
-              errorMessage={errorMessage}
-              onPlayMessageAudio={handlePlayMessageAudio}
-              personalityMode={personalityMode}
-              onTogglePersonalityMode={setPersonalityMode}
-              onRetry={lastFailedQuery ? handleRetryLastMessage : undefined}
-              isSpeaking={jarvisState === "SPEAKING"}
-              onStopSpeaking={handleInterruptPlayback}
-            />
+          <div className="jarvis-command-layout">
+            {/* Centerpiece Orb & Live Waveform Visualizer */}
+            <div className="jarvis-visualizer-card">
+              <div className="orb-centerpiece-wrapper">
+                <JarvisOrb
+                  state={jarvisState}
+                  size={220}
+                  onClick={handleToggleListen}
+                  interactive={true}
+                />
+                <div style={{ marginTop: "12px", textAlign: "center" }}>
+                  <span style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "0.8px",
+                    textTransform: "uppercase",
+                    color: jarvisState === "SPEAKING" ? "#76b900" : jarvisState === "LISTENING" ? "#00ff88" : jarvisState === "PROCESSING" ? "#00e5ff" : "#94a3b8"
+                  }}>
+                    {jarvisState === "LISTENING" ? "Listening to Voice Input..." :
+                     jarvisState === "PROCESSING" ? "Analyzing Security Directive..." :
+                     jarvisState === "SPEAKING" ? "Speaking Response..." : "Awaiting Directive"}
+                  </span>
+                </div>
+                <JarvisWaveform state={jarvisState} height={52} barCount={32} />
+                <JarvisMicButton
+                  state={jarvisState}
+                  isListening={isListening}
+                  isMuted={isMuted}
+                  isMicMuted={isMicMuted}
+                  isSpeechSupported={jarvisVoice.isSpeechRecognitionSupported()}
+                  isPaused={isPaused}
+                  isWakeWordEnabled={isWakeWordEnabled}
+                  isPushToTalkActive={isPushToTalkActive}
+                  micPermissionStatus={micPermission}
+                  recordingDurationSeconds={recordingDuration}
+                  onToggleListen={handleToggleListen}
+                  onStopListening={() => jarvisVoice.stopListening()}
+                  onToggleMute={handleToggleMute}
+                  onToggleMicMute={handleToggleMicMute}
+                  onToggleWakeWord={handleToggleWakeWord}
+                  onStartPushToTalk={handleStartPushToTalk}
+                  onStopPushToTalk={handleStopPushToTalk}
+                  onRequestMicPermission={handleRequestMicPermission}
+                  onStopSpeaking={() => {
+                    jarvisVoice.stopSpeaking();
+                    setIsPaused(false);
+                  }}
+                  onPauseSpeaking={handlePauseSpeaking}
+                  onResumeSpeaking={handleResumeSpeaking}
+                  onReplaySpeech={handleReplaySpeech}
+                />
+              </div>
+
+              <div className="voice-capabilities-list">
+                <div className="capability-item">
+                  <span className="dot active" />
+                  <span>Multilingual: Hindi (हिन्दी), Marathi (मराठी), Hinglish, English</span>
+                </div>
+                <div className="capability-item">
+                  <span className="dot active" />
+                  <span>Local-First Speech ASR & Piper Indic TTS (Zero Cloud Audio Egress)</span>
+                </div>
+                <div className="capability-item">
+                  <span className="dot active" />
+                  <span>Zero-Trust Grounded Verification & Confirmation Required for Actions</span>
+                </div>
+                <div className="capability-item">
+                  <span className="dot active" />
+                  <span>SHA-256 Chained Cryptographic Security Audit Logs</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Action Tiles & Overview */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="home-quick-actions-grid">
+                <div className="home-action-tile" onClick={() => setActiveTab("chat")}>
+                  <div className="tile-icon-box"><MessageSquare size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Direct Chat & Transcript</strong>
+                    <small>Open multi-turn conversation and text dialogue</small>
+                  </div>
+                </div>
+
+                <div className="home-action-tile" onClick={() => setActiveTab("memory")}>
+                  <div className="tile-icon-box"><Brain size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Personal Memory Hub</strong>
+                    <small>Reminders, notes, to-dos, and search history</small>
+                  </div>
+                </div>
+
+                <div className="home-action-tile" onClick={() => setActiveTab("tools")}>
+                  <div className="tile-icon-box"><ShieldCheck size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Tool Registry ({Object.keys(toolsList).length})</strong>
+                    <small>View approved security, personal & OSINT tools</small>
+                  </div>
+                </div>
+
+                <div className="home-action-tile" onClick={() => setActiveTab("agentshield")}>
+                  <div className="tile-icon-box"><Activity size={20} /></div>
+                  <div className="tile-text">
+                    <strong>AgentShield SOC</strong>
+                    <small>Threat briefing, quarantined agents, triage</small>
+                  </div>
+                </div>
+
+                <div className="home-action-tile" onClick={() => handleUserMessage("Launch calculator")}>
+                  <div className="tile-icon-box"><Sparkles size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Launch Calculator</strong>
+                    <small>Quick test approved desktop application</small>
+                  </div>
+                </div>
+
+                <div className="home-action-tile" onClick={() => setActiveTab("settings")}>
+                  <div className="tile-icon-box"><Settings size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Voice Diagnostics</strong>
+                    <small>Real-time audio hardware & latency test</small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mini Recent Messages Stream */}
+              <div className="jarvis-visualizer-card" style={{ flex: 1, padding: "16px", minHeight: "220px", justifyContent: "flex-start" }}>
+                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                  <strong style={{ fontSize: "13px", color: "#fff" }}>Recent Conversation Stream</strong>
+                  <button type="button" className="tab-btn" onClick={() => setActiveTab("chat")} style={{ padding: "4px 8px", fontSize: "11px" }}>
+                    View All ({messages.length}) →
+                  </button>
+                </div>
+                {messages.length === 0 ? (
+                  <p style={{ color: "var(--text-dim)", fontSize: "12px", fontStyle: "italic", margin: "auto" }}>
+                    No recent dialogue. Click the microphone orb or press space to give a command in Hindi, Marathi, Hinglish, or English.
+                  </p>
+                ) : (
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", maxHeight: "200px" }}>
+                    {messages.slice(-3).map((m, i) => (
+                      <div key={i} style={{
+                        padding: "8px 12px",
+                        background: m.role === "user" ? "rgba(0, 229, 255, 0.08)" : "rgba(118, 185, 0, 0.08)",
+                        border: `1px solid ${m.role === "user" ? "rgba(0, 229, 255, 0.2)" : "rgba(118, 185, 0, 0.2)"}`,
+                        borderRadius: "6px",
+                        fontSize: "12px"
+                      }}>
+                        <strong style={{ color: m.role === "user" ? "#00e5ff" : "#76b900", marginRight: "6px" }}>
+                          {m.role === "user" ? "You" : "AMOJA"}:
+                        </strong>
+                        <span style={{ color: "#e2e8f0" }}>{m.content}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Tab 2: Proactive Security Briefing */}
-      {activeTab === "briefing" && (
+      {/* View 2: Dedicated Chat & Directive Stream */}
+      {activeTab === "chat" && (
+        <div className="jarvis-stream-card" style={{ minHeight: "680px" }}>
+          <JarvisChatPanel
+            messages={messages}
+            onSendMessage={handleUserMessage}
+            onConfirmAction={handleConfirmAction}
+            onClearHistory={handleClearHistory}
+            selectedLanguage={selectedLanguage}
+            onSelectLanguage={(lang) => {
+              setSelectedLanguage(lang);
+              jarvisVoice.setLanguage(lang);
+              if (preferences) {
+                const updated = { ...preferences, default_language: lang };
+                setPreferences(updated);
+                saveJarvisPreferences(updated).catch(() => {});
+              }
+            }}
+            isProcessing={isProcessing}
+            transcription={transcription}
+            errorMessage={errorMessage}
+            onPlayMessageAudio={handlePlayMessageAudio}
+            personalityMode={personalityMode}
+            onTogglePersonalityMode={setPersonalityMode}
+            onRetry={lastFailedQuery ? handleRetryLastMessage : undefined}
+            isSpeaking={jarvisState === "SPEAKING"}
+            onStopSpeaking={handleInterruptPlayback}
+          />
+        </div>
+      )}
+
+      {/* View 3: Personal Assistant Memory, Notes, Reminders & Searchable History */}
+      {activeTab === "memory" && (
+        <JarvisMemoryPanel />
+      )}
+
+      {/* View 5: AgentShield SOC Telemetry & Threat Briefing */}
+      {activeTab === "agentshield" && (
         <div className="jarvis-briefing-view">
           <div className="briefing-header-card">
             <div className="threat-summary-cluster">
@@ -991,22 +1122,22 @@ export const JarvisPage: React.FC<Props> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Embedded Live Diagnostics in Settings */}
+              <div style={{ marginTop: "24px" }}>
+                <h4 style={{ color: "#fff", marginBottom: "12px", fontSize: "14px" }}>Voice Pipeline Self-Diagnostics</h4>
+                <JarvisVoiceDiagnosticsPanel
+                  conversationState={jarvisState}
+                  currentTranscript={transcription}
+                  errorMessage={errorMessage}
+                  onRetryConnection={loadBriefing}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Tab 5: Voice Pipeline Real-Time Diagnostics HUD */}
-      {activeTab === "diagnostics" && (
-        <div className="jarvis-diagnostics-view" style={{ maxWidth: "1200px", margin: "0 auto", padding: "12px 0" }}>
-          <JarvisVoiceDiagnosticsPanel
-            conversationState={jarvisState}
-            currentTranscript={transcription}
-            errorMessage={errorMessage}
-            onRetryConnection={loadBriefing}
-          />
         </div>
       )}
     </div>
   );
 };
+

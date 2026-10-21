@@ -91,105 +91,8 @@ export const JarvisMicButton: React.FC<Props> = ({
         </div>
       )}
 
-      <div className="jarvis-audio-controls">
-        {/* Microphone Mute Toggle (Input) */}
-        {onToggleMicMute && (
-          <button
-            type="button"
-            className={`btn-jarvis-control mic-mute-btn ${isMicMuted ? "active-muted" : ""}`}
-            onClick={onToggleMicMute}
-            title={isMicMuted ? "Unmute Microphone (Allow Voice Capture)" : "Mute Microphone (Hardware Input Disabled)"}
-            aria-label={isMicMuted ? "Unmute Microphone" : "Mute Microphone"}
-          >
-            {isMicMuted ? <MicOff size={16} className="text-red" /> : <Mic size={16} />}
-            <span>{isMicMuted ? "MIC MUTED" : "MIC ON"}</span>
-          </button>
-        )}
-
-        {/* Optional "Hey Amoja" Wake-Word Activation Toggle */}
-        {onToggleWakeWord && (
-          <button
-            type="button"
-            className={`btn-jarvis-control wake-word-toggle-btn ${isWakeWordEnabled ? "active-wake" : ""}`}
-            onClick={onToggleWakeWord}
-            title={isWakeWordEnabled ? "Wake-Word Active: say 'Hey Amoja' to command assistant" : "Enable 'Hey Amoja' wake-word activation"}
-            aria-label={isWakeWordEnabled ? "Disable Wake Word" : "Enable Wake Word"}
-          >
-            <Sparkles size={14} className={isWakeWordEnabled ? "sparkle-glow" : ""} />
-            <span>{isWakeWordEnabled ? "HEY AMOJA: ON" : "WAKE: OFF"}</span>
-          </button>
-        )}
-
-        {/* Explicit Stop Listening button when actively recording */}
-        {isListening && (
-          <button
-            type="button"
-            className="btn-jarvis-control stop-listening-btn"
-            onClick={onStopListening}
-            title="Stop listening (Esc or say 'Stop listening')"
-            aria-label="Stop listening"
-          >
-            <Square size={16} fill="currentColor" />
-            <span>Stop Listening</span>
-          </button>
-        )}
-
-        {/* Stop Speaking button if speech output is currently playing */}
-        {(state === "SPEAKING" || isPaused) && (
-          <button
-            type="button"
-            className="btn-jarvis-control stop-speaking-btn"
-            onClick={onStopSpeaking}
-            title="Silence speech output"
-            aria-label="Stop speech playback"
-          >
-            <VolumeX size={16} />
-            <span>Stop Speech</span>
-          </button>
-        )}
-
-        {/* Pause/Resume buttons */}
-        {state === "SPEAKING" && onPauseSpeaking && (
-          <button
-            type="button"
-            className="btn-jarvis-control"
-            onClick={onPauseSpeaking}
-            title="Pause speech playback"
-            aria-label="Pause speech"
-          >
-            <Pause size={16} />
-            <span>Pause</span>
-          </button>
-        )}
-
-        {isPaused && onResumeSpeaking && (
-          <button
-            type="button"
-            className="btn-jarvis-control"
-            onClick={onResumeSpeaking}
-            title="Resume speech playback"
-            aria-label="Resume speech"
-          >
-            <Play size={16} />
-            <span>Resume</span>
-          </button>
-        )}
-
-        {/* Replay button */}
-        {onReplaySpeech && state !== "SPEAKING" && !isListening && (
-          <button
-            type="button"
-            className="btn-jarvis-control"
-            onClick={onReplaySpeech}
-            title="Replay last speech output"
-            aria-label="Replay speech"
-          >
-            <RotateCcw size={16} />
-            <span>Replay</span>
-          </button>
-        )}
-
-        {/* Primary Microphone Trigger Button (Supports Click or Hold-to-Talk) */}
+      {/* Primary Microphone Trigger Button (Centered Hero) */}
+      <div className="jarvis-primary-mic-wrapper">
         <button
           type="button"
           className={`jarvis-mic-btn state-${state.toLowerCase()} ${isListening ? "active-listening" : ""} ${isPushToTalkActive ? "ptt-pressed" : ""} ${isMicMuted ? "btn-mic-muted" : ""}`}
@@ -227,8 +130,114 @@ export const JarvisMicButton: React.FC<Props> = ({
             )}
           </div>
         </button>
+      </div>
 
-        {/* Speaker Output Mute Toggle */}
+      {/* Push-to-Talk Helper Cue directly beneath Central Mic */}
+      <div className="ptt-helper-cue">
+        <Hand size={12} />
+        <span>Hold Mic button or <strong>Spacebar</strong> to Push-to-Talk</span>
+      </div>
+
+      {/* Auxiliary Voice Control Buttons (Responsive Grid) */}
+      <div className="jarvis-audio-controls">
+        {/* Contextual: Stop Listening when actively recording */}
+        {isListening && (
+          <button
+            type="button"
+            className="btn-jarvis-control stop-listening-btn"
+            onClick={onStopListening}
+            title="Stop listening (Esc or say 'Stop listening')"
+            aria-label="Stop listening"
+          >
+            <Square size={14} fill="currentColor" />
+            <span>Stop Listening</span>
+          </button>
+        )}
+
+        {/* Contextual: Stop Speaking if speech output is playing */}
+        {(state === "SPEAKING" || isPaused) && (
+          <button
+            type="button"
+            className="btn-jarvis-control stop-speaking-btn"
+            onClick={onStopSpeaking}
+            title="Silence speech output"
+            aria-label="Stop speech playback"
+          >
+            <VolumeX size={15} />
+            <span>Stop Speech</span>
+          </button>
+        )}
+
+        {/* Pause/Resume buttons */}
+        {state === "SPEAKING" && onPauseSpeaking && (
+          <button
+            type="button"
+            className="btn-jarvis-control"
+            onClick={onPauseSpeaking}
+            title="Pause speech playback"
+            aria-label="Pause speech"
+          >
+            <Pause size={14} />
+            <span>Pause</span>
+          </button>
+        )}
+
+        {isPaused && onResumeSpeaking && (
+          <button
+            type="button"
+            className="btn-jarvis-control"
+            onClick={onResumeSpeaking}
+            title="Resume speech playback"
+            aria-label="Resume speech"
+          >
+            <Play size={14} />
+            <span>Resume</span>
+          </button>
+        )}
+
+        {/* 1. Microphone Hardware Input Mute Toggle */}
+        {onToggleMicMute && (
+          <button
+            type="button"
+            className={`btn-jarvis-control mic-mute-btn ${isMicMuted ? "active-muted" : ""}`}
+            onClick={onToggleMicMute}
+            title={isMicMuted ? "Unmute Microphone (Allow Voice Capture)" : "Mute Microphone (Hardware Input Disabled)"}
+            aria-label={isMicMuted ? "Unmute Microphone" : "Mute Microphone"}
+          >
+            {isMicMuted ? <MicOff size={15} className="text-red" /> : <Mic size={15} />}
+            <span>{isMicMuted ? "MIC MUTED" : "MIC ON"}</span>
+          </button>
+        )}
+
+        {/* 2. "Hey Amoja" Wake-Word Activation Toggle */}
+        {onToggleWakeWord && (
+          <button
+            type="button"
+            className={`btn-jarvis-control wake-word-toggle-btn ${isWakeWordEnabled ? "active-wake" : ""}`}
+            onClick={onToggleWakeWord}
+            title={isWakeWordEnabled ? "Wake-Word Active: say 'Hey Amoja' to command assistant" : "Enable 'Hey Amoja' wake-word activation"}
+            aria-label={isWakeWordEnabled ? "Disable Wake Word" : "Enable Wake Word"}
+          >
+            <Sparkles size={14} className={isWakeWordEnabled ? "sparkle-glow" : ""} />
+            <span>{isWakeWordEnabled ? "HEY AMOJA: ON" : "WAKE: OFF"}</span>
+          </button>
+        )}
+
+        {/* 3. Replay Last Spoken Response */}
+        {onReplaySpeech && state !== "SPEAKING" && !isListening && (
+          <button
+            type="button"
+            className="btn-jarvis-control replay-speech-btn"
+            onClick={onReplaySpeech}
+            title="Replay last speech output"
+            aria-label="Replay speech"
+          >
+            <RotateCcw size={14} />
+            <span>Replay</span>
+          </button>
+        )}
+
+        {/* 4. Speaker Audio Output Mute Toggle */}
         <button
           type="button"
           className={`btn-jarvis-control mute-toggle-btn ${isMuted ? "muted" : ""}`}
@@ -236,16 +245,11 @@ export const JarvisMicButton: React.FC<Props> = ({
           title={isMuted ? "Unmute spoken responses" : "Mute spoken responses (Silent Text-Only Mode)"}
           aria-label={isMuted ? "Unmute audio responses" : "Mute audio responses"}
         >
-          {isMuted ? <VolumeX size={18} className="text-red" /> : <Volume2 size={18} />}
+          {isMuted ? <VolumeX size={15} className="text-red" /> : <Volume2 size={15} />}
           <span>{isMuted ? "AUDIO OFF" : "AUDIO ON"}</span>
         </button>
-      </div>
-
-      {/* Push-to-Talk Helper Cue */}
-      <div className="ptt-helper-cue">
-        <Hand size={11} />
-        <span>Hold Mic button or <strong>Spacebar</strong> to Push-to-Talk</span>
       </div>
     </div>
   );
 };
+

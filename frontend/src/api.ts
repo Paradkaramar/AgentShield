@@ -271,4 +271,92 @@ export async function enrollDevice(data: { token: string; device_name?: string; 
   });
 }
 
+// ============================================================================
+// Phase 3 & 5: Personal Assistant, Memory, and System Status API
+// ============================================================================
+
+export async function getJarvisReminders(includeCompleted: boolean = false) {
+  return request<{ reminders: import("./types").JarvisReminder[] }>(`/api/jarvis/reminders?include_completed=${includeCompleted}`);
+}
+
+export async function createJarvisReminder(title: string, dueTime?: string, priority: string = "NORMAL") {
+  return request<import("./types").JarvisReminder>("/api/jarvis/reminders", {
+    method: "POST",
+    body: JSON.stringify({ title, due_time: dueTime, priority })
+  });
+}
+
+export async function deleteJarvisReminder(id: number) {
+  return request<{ message: string }>(`/api/jarvis/reminders/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export async function getJarvisNotes(query?: string) {
+  const url = query ? `/api/jarvis/notes?query=${encodeURIComponent(query)}` : "/api/jarvis/notes";
+  return request<{ notes: import("./types").JarvisNote[] }>(url);
+}
+
+export async function createJarvisNote(title: string, content: string, tags?: string[]) {
+  return request<import("./types").JarvisNote>("/api/jarvis/notes", {
+    method: "POST",
+    body: JSON.stringify({ title, content, tags })
+  });
+}
+
+export async function deleteJarvisNote(id: number) {
+  return request<{ message: string }>(`/api/jarvis/notes/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export async function getJarvisTodos(includeCompleted: boolean = true) {
+  return request<{ todos: import("./types").JarvisTodo[] }>(`/api/jarvis/todos?include_completed=${includeCompleted}`);
+}
+
+export async function createJarvisTodo(task: string, priority: string = "NORMAL") {
+  return request<import("./types").JarvisTodo>("/api/jarvis/todos", {
+    method: "POST",
+    body: JSON.stringify({ task, priority })
+  });
+}
+
+export async function toggleJarvisTodo(id: number) {
+  return request<{ id: number; completed: boolean; message: string }>(`/api/jarvis/todos/${id}/toggle`, {
+    method: "PATCH"
+  });
+}
+
+export async function getJarvisMemories() {
+  return request<{ memories: import("./types").JarvisMemory[] }>("/api/jarvis/memories");
+}
+
+export async function createJarvisMemory(key: string, value: string, category: string = "preference") {
+  return request<import("./types").JarvisMemory>("/api/jarvis/memories", {
+    method: "POST",
+    body: JSON.stringify({ key, value, category })
+  });
+}
+
+export async function deleteJarvisMemory(key: string) {
+  return request<{ message: string }>(`/api/jarvis/memories/${encodeURIComponent(key)}`, {
+    method: "DELETE"
+  });
+}
+
+export async function clearJarvisMemories() {
+  return request<{ message: string; count: number }>("/api/jarvis/memories", {
+    method: "DELETE"
+  });
+}
+
+export async function searchJarvisHistory(q: string) {
+  return request<{ query: string; count: number; results: any[] }>(`/api/jarvis/history/search?q=${encodeURIComponent(q)}`);
+}
+
+export async function getJarvisSystemStatus() {
+  return request<import("./types").JarvisSystemStatus>("/api/jarvis/system/status");
+}
+
+
 
