@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 
 from ..db.database import connect, now_iso
+from ..core.audit import record_audit_entry
 from ..engines.risk_engine import predict_near_future_risk, calculate_dynamic_risk
 from ..engines.policy_engine import detect_permission_drift
 from ..engines.kill_switch import trigger_emergency_kill_switch
@@ -1378,7 +1379,7 @@ def execute_execute_multistep_task(db: sqlite3.Connection, params: Dict[str, Any
     )
 
 # Mapping of tool names to their execution functions
-TOOL_HANDLERS = {
+TOOL_HANDLERS: Dict[str, Any] = {
     "get_security_dashboard_metrics": execute_get_security_dashboard_metrics,
     "list_agents": execute_list_agents,
     "get_agent_details": execute_get_agent_details,
@@ -1437,7 +1438,7 @@ TOOL_HANDLERS = {
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
     """Dispatches tool execution safely with error handling and real DB connection."""
-    handler = TOOL_HANDLERS.get(tool_name)
+    handler: Any = TOOL_HANDLERS.get(tool_name)
     if not handler:
         return {"error": f"Tool '{tool_name}' is not registered or supported"}
 
@@ -1445,10 +1446,10 @@ def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any
         try:
             import inspect
             sig = inspect.signature(handler)
+            kwargs: Dict[str, Any] = {}
             if "user" in sig.parameters:
-                result = handler(db, arguments, user=user)
-            else:
-                result = handler(db, arguments)
+                kwargs["user"] = user
+            result = handler(db, arguments, **kwargs)
             return result
         except Exception as e:
             return {"error": f"Execution error in tool '{tool_name}': {str(e)}"}

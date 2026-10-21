@@ -1,8 +1,14 @@
 import os
 import re
+import sys
 import json
 import uuid
+import shutil
 import sqlite3
+import subprocess
+import urllib.parse
+import webbrowser
+from pathlib import Path
 import httpx
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
