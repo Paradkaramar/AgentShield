@@ -710,7 +710,66 @@ def parse_multilingual_intent(
     ]):
         return "list_user_memories", {}, None, lang
 
-    # 42. Navigation directives
+    # 43. Live Weather Directives
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "weather in", "weather for", "weather of", "aaj ka weather", "weather kaisa hai", "aaj ka mausam", "mausam kaisa hai", "weather report", "live weather",
+        "weather forecast", "temperature kitna hai", "aajche havaman", "havaman kase aahe", "havaman sanga",
+        "हवामान कसे आहे", "हवामान सांगा", "पाऊस पडेल का", "मौसम कैसा है", "तापमान कितना है", "बारिश होगी क्या", "आज का मौसम"
+    ]):
+        city_extracted = None
+        for cand_city in ["pune", "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad", "chennai", "kolkata", "nagpur", "nashik", "london", "new york"]:
+            if cand_city in p:
+                city_extracted = cand_city.capitalize()
+                break
+        if not city_extracted:
+            for dev_k, dev_name in [("पुणे", "Pune"), ("मुंबई", "Mumbai"), ("दिल्ली", "Delhi"), ("नागपूर", "Nagpur"), ("नाशिक", "Nashik")]:
+                if dev_k in p or dev_k in p_norm:
+                    city_extracted = dev_name
+                    break
+        return "get_live_weather", {"city": city_extracted}, None, lang
+
+    # 44. Cybersecurity Advisories & CVE Intelligence
+    cve_in_p = re.search(r"cve[-_]\d{4}[-_]\d{4,7}", p, re.IGNORECASE)
+    if cve_in_p or any(phrase in p or phrase in p_norm for phrase in [
+        "cybersecurity alerts", "cyber alerts", "cisa kev", "zero-day", "latest cve", "cybersecurity advisories",
+        "vulnerability advisory", "security advisories", "cisa advisories", "cert-in",
+        "सायबर सिक्युरिटी अलर्ट्स", "सायबर धोके", "सायबर ॲडव्हायझरी", "साइबर सुरक्षा अलर्ट", "सुरक्षा एडवाइजरी", "वल्नरेबिलिटी"
+    ]):
+        target_q = cve_in_p.group(0).upper().replace("_", "-") if cve_in_p else "latest CISA KEV advisories"
+        return "search_cybersecurity_intelligence", {"query_or_cve": target_q}, "Incidents & Alerts", lang
+
+    # 45. AI & Technology Releases
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "ai technology mein kya naya launch hua", "ai technology mein kya naya hai", "ai technology launch",
+        "new ai models", "latest ai models", "latest tech releases", "tech news",
+        "नवीन एआय मॉडेल्स", "नवीन तंत्रज्ञान", "नया एआई लॉन्च", "टेक न्यूज़"
+    ]):
+        return "search_live_news_and_tech", {"query": "artificial intelligence model release technology launch", "freshness": "week"}, None, lang
+
+    # 46. Live News & Current Events
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "aaj ki latest news", "latest news batao", "aajchya taja batmya", "taja batmya sanga", "breaking news",
+        "current affairs", "headlines", "latest news", "aaj ki khabar", "aajchi news",
+        "ताज्या बातम्या सांगा", "आजच्या बातम्या", "ताज़ा ख़बर बताओ", "आज की न्यूज़", "मुख्य समाचार"
+    ]):
+        return "search_live_news_and_tech", {"query": "latest news current events India world", "freshness": "today"}, None, lang
+
+    # 47. Live Web Research & Source Verification
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "search the web for", "search online for", "internet par dhundo", "internet var shodha", "web research",
+        "याच्याबद्दल इंटरनेटवर शोधा", "इसके बारे में सर्च करो", "इंटरनेट रिसर्च"
+    ]):
+        clean_search = re.sub(r"^(?:please\s+)?(?:search\s+the\s+web\s+(?:for\s+)?|search\s+online\s+(?:for\s+)?|internet\s+par\s+dhundo\s+|internet\s+var\s+shodha\s+|web\s+research\s+on\s+)", "", p, flags=re.IGNORECASE).strip()
+        return "perform_live_web_research", {"query": clean_search or "latest developments", "freshness": "week"}, None, lang
+
+    # 48. Windows & Software Updates
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "windows update news", "windows 11 update", "software updates", "patch tuesday", "check windows updates",
+        "विंडोज अपडेट", "सॉफ्टवेअर अपडेट माहिती"
+    ]):
+        return "check_windows_software_updates", {"software_name": "windows"}, None, lang
+
+    # 49. Navigation directives
     nav_map = {
         "overview": ["overview", "डॅशबोर्ड", "अवलोकन"],
         "Real-Time Monitor": ["real-time", "monitor", "मॉनिटर", "निरीक्षण"],

@@ -33,6 +33,10 @@ from .jarvis_memory import (
 from ..engines.kill_switch import trigger_emergency_kill_switch
 from .language_detection import detect_language as detect_language_core
 from .multilingual_commands import parse_multilingual_intent, check_multilingual_prompt_injection
+from .live_intelligence import (
+    route_query, QueryRouteResult, LiveQueryCategory,
+    synthesize_live_intelligence_response
+)
 from .text_to_speech import local_tts_engine
 from ..firewall.ai_firewall import AIAgentSecurityGateway
 
@@ -324,6 +328,44 @@ def synthesize_response_nlp(
         return text, speech
 
     # If tool was executed: format grounded response
+    if tool_name in [
+        "get_live_weather",
+        "search_cybersecurity_intelligence",
+        "search_live_news_and_tech",
+        "perform_live_web_research",
+        "check_windows_software_updates"
+    ]:
+        if tool_name == "get_live_weather":
+            cat = LiveQueryCategory.WEATHER_FORECAST
+            ents = {"city": (tool_result_data or {}).get("city")}
+        elif tool_name == "search_cybersecurity_intelligence":
+            cat = LiveQueryCategory.CYBERSECURITY_INTELLIGENCE
+            ents = {"cve_id": (tool_result_data or {}).get("cve_id")}
+        elif tool_name == "check_windows_software_updates":
+            cat = LiveQueryCategory.WINDOWS_SOFTWARE_UPDATES
+            ents = {"software": "windows"}
+        elif tool_name == "perform_live_web_research":
+            cat = LiveQueryCategory.RESEARCH_SOURCE_COMPARISON
+            ents = {}
+        else:
+            cat = LiveQueryCategory.AI_TECH_RELEASES if any(k in user_prompt.lower() for k in ["ai", "model", "tech", "launch"]) else LiveQueryCategory.CURRENT_EVENTS_NEWS
+            ents = {}
+
+        rr = QueryRouteResult(
+            primary_category=cat,
+            secondary_categories=[],
+            requires_live_data=True,
+            extracted_entities=ents
+        )
+        res = synthesize_live_intelligence_response(
+            query=user_prompt,
+            route_result=rr,
+            intel_data=tool_result_data or {},
+            lang=lang,
+            mode=personality_mode
+        )
+        return res.get("content", ""), res.get("speech_text", "")
+
     if tool_name == "get_security_dashboard_metrics":
         d = tool_result_data
         if lang == "mr":
@@ -1741,6 +1783,30 @@ async def process_jarvis_turn(
     # 3. Match user intent to supported tools and voice commands with follow-up awareness
     tool_name, tool_args, nav_target = match_command_intent(request.message, current_context, session_context)
 
+    # 3.5 Dynamic Live Intelligence Fallback Routing
+    if not tool_name:
+        route_eval = route_query(request.message, session_context)
+        if route_eval.requires_live_data:
+            if route_eval.primary_category == LiveQueryCategory.WEATHER_FORECAST:
+                tool_name = "get_live_weather"
+                tool_args = {"city": route_eval.extracted_entities.get("city")}
+            elif route_eval.primary_category == LiveQueryCategory.CYBERSECURITY_INTELLIGENCE:
+                tool_name = "search_cybersecurity_intelligence"
+                cve = route_eval.extracted_entities.get("cve_id")
+                tool_args = {"query_or_cve": cve or request.message}
+            elif route_eval.primary_category == LiveQueryCategory.WINDOWS_SOFTWARE_UPDATES:
+                tool_name = "check_windows_software_updates"
+                tool_args = {"software_name": "windows"}
+            elif route_eval.primary_category == LiveQueryCategory.AI_TECH_RELEASES:
+                tool_name = "search_live_news_and_tech"
+                tool_args = {"query": request.message, "freshness": route_eval.freshness_filter or "week"}
+            elif route_eval.primary_category == LiveQueryCategory.CURRENT_EVENTS_NEWS:
+                tool_name = "search_live_news_and_tech"
+                tool_args = {"query": request.message, "freshness": route_eval.freshness_filter or "today"}
+            elif route_eval.primary_category == LiveQueryCategory.RESEARCH_SOURCE_COMPARISON:
+                tool_name = "perform_live_web_research"
+                tool_args = {"query": request.message, "freshness": route_eval.freshness_filter or "week"}
+
     # Handle explicit "stop listening" command
     if tool_name == "STOP_LISTENING":
         msg = "Microphone listening paused. Click the microphone button or press push-to-talk to resume."
@@ -1919,6 +1985,24 @@ async def process_jarvis_turn(
         except Exception:
             audio_b64 = None
 
+    # Extract citations and live intelligence metadata if live tool was executed
+    citations_list: List[Dict[str, Any]] = []
+    live_meta: Optional[Dict[str, Any]] = None
+    if tool_name in ["get_live_weather", "search_cybersecurity_intelligence", "search_live_news_and_tech", "perform_live_web_research", "check_windows_software_updates"]:
+        if isinstance(result_data, dict):
+            citations_list = result_data.get("sources") or result_data.get("official_sources") or []
+            if not citations_list and tool_name == "get_live_weather":
+                citations_list = [{"publisher": "Open-Meteo Meteorological Service", "url": "https://open-meteo.com/"}]
+            elif not citations_list and tool_name == "check_windows_software_updates":
+                citations_list = [{"publisher": "Microsoft Windows Release Health", "url": result_data.get("official_source", "https://learn.microsoft.com/en-us/windows/release-health/")}]
+            live_meta = {
+                "tool": tool_name,
+                "retrieved_at": result_data.get("retrieved_at") or result_data.get("verified_at") or now_iso(),
+                "cached": result_data.get("cached", False),
+                "stale": result_data.get("stale", False),
+                "status": result_data.get("status")
+            }
+
     return JarvisMessageResponse(
         session_id=session_id,
         message=clean_text,
@@ -1934,7 +2018,9 @@ async def process_jarvis_turn(
         audio_confidence=0.95 if request.is_voice else None,
         is_local_mode=is_local_mode,
         audio_base64=audio_b64,
-        personality_mode=personality_mode
+        personality_mode=personality_mode,
+        citations=citations_list,
+        live_intelligence=live_meta
     )
 
 def execute_confirmed_action(

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   ShieldAlert, Bot, Mic, Cpu, Radio, Activity,
   Settings, RefreshCw, Volume2, ShieldCheck, Terminal, Compass, Sparkles, Square,
-  Home, MessageSquare, Wrench, Shield, CheckSquare, Brain
+  Home, MessageSquare, Wrench, Shield, CheckSquare, Brain, Globe
 } from "lucide-react";
 import { JarvisOrb } from "../components/jarvis/JarvisOrb";
 import { JarvisWaveform } from "../components/jarvis/JarvisWaveform";
@@ -11,6 +11,7 @@ import { JarvisSecurityHUD } from "../components/jarvis/JarvisSecurityHUD";
 import { JarvisChatPanel } from "../components/jarvis/JarvisChatPanel";
 import { JarvisVoiceDiagnosticsPanel } from "../components/jarvis/JarvisVoiceDiagnosticsPanel";
 import { JarvisMemoryPanel } from "../components/jarvis/JarvisMemoryPanel";
+import { LiveIntelligenceHub } from "../components/jarvis/LiveIntelligenceHub";
 import { jarvisVoice } from "../components/jarvis/JarvisVoiceEngine";
 import {
   JarvisState, JarvisLanguage, JarvisMessage, JarvisBriefing,
@@ -22,7 +23,7 @@ import {
   getJarvisTools, getJarvisVoiceEngines, synthesizeAudioJson
 } from "../api";
 
-export type JarvisTab = "home" | "chat" | "memory" | "tools" | "agentshield" | "settings";
+export type JarvisTab = "home" | "chat" | "live-intel" | "memory" | "tools" | "agentshield" | "settings";
 
 interface Props {
   onNavigatePage: (page: string) => void;
@@ -548,6 +549,19 @@ export const JarvisPage: React.FC<Props> = ({
           </button>
           <button
             type="button"
+            className={`tab-btn ${activeTab === "live-intel" ? "active" : ""}`}
+            onClick={() => setActiveTab("live-intel")}
+            style={{
+              borderColor: activeTab === "live-intel" ? "#38bdf8" : undefined,
+              color: activeTab === "live-intel" ? "#38bdf8" : undefined,
+              background: activeTab === "live-intel" ? "rgba(56, 189, 248, 0.18)" : undefined
+            }}
+          >
+            <Globe size={14} style={{ color: activeTab === "live-intel" ? "#38bdf8" : undefined }} />
+            <span>Live Intel</span>
+          </button>
+          <button
+            type="button"
             className={`tab-btn ${activeTab === "memory" ? "active" : ""}`}
             onClick={() => setActiveTab("memory")}
           >
@@ -703,6 +717,14 @@ export const JarvisPage: React.FC<Props> = ({
                   </div>
                 </div>
 
+                <div className="home-action-tile" onClick={() => setActiveTab("live-intel")} style={{ borderColor: "rgba(56, 189, 248, 0.4)" }}>
+                  <div className="tile-icon-box" style={{ background: "rgba(56, 189, 248, 0.15)", color: "#38bdf8" }}><Globe size={20} /></div>
+                  <div className="tile-text">
+                    <strong>Live Intelligence & Research</strong>
+                    <small>Real-time weather, CISA KEV, tech news & citations</small>
+                  </div>
+                </div>
+
                 <div className="home-action-tile" onClick={() => setActiveTab("memory")}>
                   <div className="tile-icon-box"><Brain size={20} /></div>
                   <div className="tile-text">
@@ -807,6 +829,18 @@ export const JarvisPage: React.FC<Props> = ({
             onRetry={lastFailedQuery ? handleRetryLastMessage : undefined}
             isSpeaking={jarvisState === "SPEAKING"}
             onStopSpeaking={handleInterruptPlayback}
+          />
+        </div>
+      )}
+
+      {/* View: Live Intelligence Hub & Real-Time Knowledge Engine */}
+      {activeTab === "live-intel" && (
+        <div className="jarvis-stream-card" style={{ minHeight: "680px" }}>
+          <LiveIntelligenceHub
+            onAskAmoja={(query) => {
+              setActiveTab("chat");
+              handleUserMessage(query, false);
+            }}
           />
         </div>
       )}

@@ -218,7 +218,91 @@ export type JarvisMessage = {
   is_local_mode?: boolean;
   audio_base64?: string;
   personality_mode?: "friendly" | "security";
+  citations?: Array<{ title?: string; publisher?: string; publication_date?: string; url: string; snippet?: string }>;
+  live_intelligence?: { tool?: string; retrieved_at?: string; cached?: boolean; stale?: boolean; status?: string };
 };
+
+export interface LiveWeatherResult {
+  status: string;
+  city?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  observation_time?: string;
+  temperature_c?: number;
+  apparent_temperature_c?: number;
+  humidity_percent?: number;
+  wind_speed_kmh?: number;
+  condition?: string;
+  condition_mr?: string;
+  condition_hi?: string;
+  icon?: string;
+  is_severe?: boolean;
+  daily_forecast?: Array<{
+    date: string;
+    max_c: number;
+    min_c: number;
+    rain_probability: number;
+    condition: string;
+    condition_mr?: string;
+    condition_hi?: string;
+    icon: string;
+  }>;
+  sources?: Array<{ publisher: string; url: string }>;
+  needs_location_input?: boolean;
+  cached?: boolean;
+}
+
+export interface LiveCyberAdvisory {
+  cve_id: string;
+  vendor_product?: string;
+  name?: string;
+  date_added?: string;
+  short_description?: string;
+  required_action?: string;
+  due_date?: string;
+  url?: string;
+  exploitation_status?: string;
+}
+
+export interface LiveNewsArticle {
+  title: string;
+  publisher: string;
+  publication_date: string;
+  url: string;
+  snippet?: string;
+  source_type?: string;
+}
+
+export interface WindowsUpdateIntel {
+  status: string;
+  software: string;
+  installed_on_device: {
+    os_version: string;
+    hostname?: string;
+    status: string;
+  };
+  official_release_status: {
+    current_general_version?: string;
+    latest_patch_tuesday?: string;
+    official_health_url?: string;
+  };
+  update_distinction: {
+    public_advisory_status: string;
+    device_availability: string;
+    installation_status: string;
+  };
+  official_source?: string;
+  verified_at?: string;
+}
+
+export interface LiveQueryHistoryItem {
+  id: number;
+  query_text: string;
+  category: string;
+  latency_ms: number;
+  retrieved_at: string;
+}
 
 export type JarvisBriefing = {
   timestamp: string;

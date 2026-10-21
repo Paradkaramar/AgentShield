@@ -312,16 +312,18 @@ def test_search_authorized_files():
 
 
 def test_open_authorized_file_or_folder():
+    target_f = "requirements.txt" if Path("requirements.txt").exists() else "backend/requirements.txt"
     with patch("os.startfile", create=True) as mock_start, patch("subprocess.Popen") as mock_popen:
-        res = open_authorized_file_or_folder("requirements.txt")
+        res = open_authorized_file_or_folder(target_f)
         assert res["success"] is True
         assert res["status"] == "OPENED"
 
 
 def test_organize_authorized_files_move_confirmation():
+    target_f = "requirements.txt" if Path("requirements.txt").exists() else "backend/requirements.txt"
     res = organize_authorized_files(
         operation="move",
-        source_path="requirements.txt",
+        source_path=target_f,
         target_path="requirements_backup.txt"
     )
     assert res.get("requires_confirmation") is True

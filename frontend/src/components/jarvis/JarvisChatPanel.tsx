@@ -3,7 +3,8 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   Send, Bot, User as UserIcon, ShieldAlert, CheckCircle2, XCircle,
   Terminal, Globe, Trash2, Mic, AlertCircle, ChevronDown, ChevronUp, Copy, Check,
-  Volume2, Play, Pause, Download, RefreshCw, Square, MessageSquare, Folder, Monitor, Flame
+  Volume2, Play, Pause, Download, RefreshCw, Square, MessageSquare, Folder, Monitor, Flame,
+  ExternalLink
 } from "lucide-react";
 import { JarvisMessage, JarvisLanguage, JarvisConfirmationRequest } from "../../types";
 
@@ -89,6 +90,13 @@ export const JarvisChatPanel: React.FC<Props> = ({
   };
 
   const quickPrompts = [
+    // Live Intelligence & Knowledge Engine Directives
+    { label: "🌦️ Pune Weather", text: "Amoja, aaj ka weather kaisa hai Pune mein?" },
+    { label: "📰 AI & Tech Releases", text: "What are the latest AI models and tech launches this week?" },
+    { label: "🛡️ CISA KEV Advisories", text: "Aaj ke important cybersecurity alerts aur CISA KEV advisories samjhao" },
+    { label: "🪟 Windows Update Health", text: "Check Windows 11 release health and latest Patch Tuesday updates" },
+    { label: "पुण्याचे हवामान (मराठी)", text: "अमोजा, पुण्यात आज हवामान कसे आहे?" },
+    { label: "आजची टेक बातमी (हिन्दी)", text: "अमोजा, आज की लेटेस्ट टेक्नोलॉजी न्यूज़ बताओ" },
     // Windows Personal Assistant Directives
     { label: "💻 Check Windows Status", text: "Check my Windows system status, battery, and memory" },
     { label: "📝 Take a Note", text: "Take a note: Review AgentShield and personal assistant release" },
@@ -254,6 +262,28 @@ export const JarvisChatPanel: React.FC<Props> = ({
                   {m.is_local_mode && (
                     <span className="local-privacy-badge" title="Processed locally without cloud transmission">
                       Local ASR/TTS
+                    </span>
+                  )}
+                  {m.live_intelligence && (
+                    <span
+                      className="live-verified-badge"
+                      title={`Tool: ${m.live_intelligence.tool || 'Live Intel'} | Retrieved: ${m.live_intelligence.retrieved_at || 'Just now'} ${m.live_intelligence.cached ? '(Cached)' : '(Live)'}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontSize: "10px",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        background: m.live_intelligence.cached ? "rgba(234, 179, 8, 0.15)" : "rgba(56, 189, 248, 0.15)",
+                        color: m.live_intelligence.cached ? "#facc15" : "#38bdf8",
+                        border: `1px solid ${m.live_intelligence.cached ? "rgba(234, 179, 8, 0.4)" : "rgba(56, 189, 248, 0.4)"}`,
+                        fontWeight: 700,
+                        letterSpacing: "0.5px"
+                      }}
+                    >
+                      <Globe size={10} />
+                      {m.live_intelligence.cached ? "CACHED INTEL" : "LIVE VERIFIED"}
                     </span>
                   )}
                 </div>
@@ -459,6 +489,50 @@ export const JarvisChatPanel: React.FC<Props> = ({
                       </div>
                     );
                   })()}
+
+                  {/* Verified Sources & Citations */}
+                  {m.citations && m.citations.length > 0 && (
+                    <div className="citations-container" style={{ marginTop: "12px", padding: "10px 12px", background: "rgba(15, 23, 42, 0.75)", borderRadius: "6px", border: "1px solid rgba(56, 189, 248, 0.3)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#38bdf8", fontWeight: 700, marginBottom: "8px", letterSpacing: "0.5px" }}>
+                        <ExternalLink size={12} />
+                        <span>VERIFIED SOURCES & CITATIONS ({m.citations.length})</span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {m.citations.map((c, cIdx) => (
+                          <a
+                            key={cIdx}
+                            href={c.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="citation-chip"
+                            title={c.snippet || c.title || c.url}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "5px",
+                              fontSize: "11px",
+                              padding: "4px 8px",
+                              background: "rgba(56, 189, 248, 0.12)",
+                              border: "1px solid rgba(56, 189, 248, 0.35)",
+                              borderRadius: "4px",
+                              color: "#7dd3fc",
+                              textDecoration: "none",
+                              transition: "all 0.15s ease"
+                            }}
+                          >
+                            <span style={{ fontWeight: 700, color: "#38bdf8" }}>[{cIdx + 1}]</span>
+                            <span style={{ maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {c.publisher || c.title || "Source"}
+                            </span>
+                            {c.publication_date && (
+                              <span style={{ opacity: 0.65, fontSize: "10px" }}>({c.publication_date.slice(0, 10)})</span>
+                            )}
+                            <ExternalLink size={10} style={{ opacity: 0.7 }} />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

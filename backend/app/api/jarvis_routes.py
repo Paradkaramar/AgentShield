@@ -34,6 +34,21 @@ from ..jarvis.jarvis_memory import (
 )
 from ..jarvis.speech_to_text import local_stt_engine, transcribe_audio_locally
 from ..jarvis.text_to_speech import local_tts_engine
+from ..jarvis.live_intelligence import (
+    fetch_live_weather,
+    fetch_cybersecurity_intelligence,
+    search_live_news_rss,
+    search_duckduckgo_lite,
+    perform_live_web_research,
+    check_windows_software_updates
+)
+from ..db.database import connect, now_iso
+from pydantic import BaseModel, Field
+
+class LiveResearchRequest(BaseModel):
+    query: str
+    freshness: Optional[str] = "week"
+    force_refresh: Optional[bool] = False
 
 router = APIRouter(prefix="/api/jarvis", tags=["JARVIS AI Security Assistant"])
 
@@ -471,4 +486,106 @@ def get_system_status(current_user: Dict[str, Any] = Depends(get_current_user)):
             "role_based_access_control": True
         }
     }
+
+# --- Live Intelligence & Real-Time Knowledge Engine Endpoints ---
+
+@router.get("/live/weather")
+def get_live_weather_endpoint(
+    city: Optional[str] = Query(default=None),
+    latitude: Optional[float] = Query(default=None),
+    longitude: Optional[float] = Query(default=None),
+    force_refresh: bool = Query(default=False),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Fetches real-time weather and forecast data via Open-Meteo."""
+    return fetch_live_weather(
+        city=city,
+        latitude=latitude,
+        longitude=longitude,
+        force_refresh=force_refresh
+    )
+
+@router.get("/live/cyber-advisories")
+def get_cyber_advisories_endpoint(
+    query_or_cve: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=50),
+    force_refresh: bool = Query(default=False),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Fetches verified CISA KEV catalog advisories or NIST CVE records."""
+    return fetch_cybersecurity_intelligence(
+        query_or_cve=query_or_cve,
+        limit=limit,
+        force_refresh=force_refresh
+    )
+
+@router.get("/live/news")
+def get_live_news_endpoint(
+    query: str = Query(default="latest technology cybersecurity news"),
+    freshness: str = Query(default="today"),
+    max_results: int = Query(default=15, ge=1, le=30),
+    force_refresh: bool = Query(default=False),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Fetches real-time news articles via authenticated RSS feeds with publisher attribution."""
+    articles = search_live_news_rss(
+        topic=query,
+        freshness=freshness
+    )
+    return {
+        "status": "SUCCESS",
+        "query": query,
+        "freshness": freshness,
+        "count": len(articles),
+        "sources": articles,
+        "retrieved_at": now_iso()
+    }
+
+@router.post("/live/research")
+def perform_live_research_endpoint(
+    req: LiveResearchRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Conducts independent multi-source live web research and source comparison."""
+    return perform_live_web_research(
+        query=req.query,
+        freshness=req.freshness or "week",
+        max_sources=12
+    )
+
+@router.get("/live/windows-updates")
+def get_windows_updates_endpoint(
+    software_name: Optional[str] = Query(default="windows"),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Checks official Microsoft Release Health and verifies installed OS status."""
+    return check_windows_software_updates(software_name=software_name)
+
+@router.get("/live/history")
+def get_live_intel_history(
+    limit: int = Query(default=30, ge=1, le=100),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Retrieves recent live intelligence query audit logs."""
+    with connect() as db:
+        rows = db.execute(
+            """SELECT id, query, category, latency_ms, created_at
+               FROM live_intelligence_queries
+               ORDER BY id DESC LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        return {
+            "count": len(rows),
+            "history": [
+                {
+                    "id": r[0],
+                    "query_text": r[1],
+                    "category": r[2],
+                    "latency_ms": r[3],
+                    "retrieved_at": r[4]
+                }
+                for r in rows
+            ]
+        }
+
 

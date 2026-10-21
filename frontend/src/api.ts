@@ -358,5 +358,49 @@ export async function getJarvisSystemStatus() {
   return request<import("./types").JarvisSystemStatus>("/api/jarvis/system/status");
 }
 
+// Live Intelligence APIs
+export async function fetchLiveWeather(city?: string, lang: string = "auto") {
+  const params = new URLSearchParams();
+  if (city) params.set("city", city);
+  if (lang) params.set("lang", lang);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return request<import("./types").LiveWeatherResult>(`/api/jarvis/live/weather${qs}`);
+}
+
+export async function fetchLiveCyberAdvisories(cveId?: string, limit: number = 10) {
+  const params = new URLSearchParams();
+  if (cveId) params.set("cve_id", cveId);
+  params.set("limit", limit.toString());
+  return request<{ status: string; advisories: import("./types").LiveCyberAdvisory[]; retrieved_at?: string; total_source_records?: number }>(
+    `/api/jarvis/live/cyber-advisories?${params.toString()}`
+  );
+}
+
+export async function fetchLiveNews(topic: string = "all", freshness: string = "week", limit: number = 10) {
+  const params = new URLSearchParams({ topic, freshness, limit: limit.toString() });
+  return request<{ status: string; topic: string; freshness: string; articles: import("./types").LiveNewsArticle[]; retrieved_at?: string }>(
+    `/api/jarvis/live/news?${params.toString()}`
+  );
+}
+
+export async function performLiveResearch(query: string, lang: string = "auto") {
+  return request<{ status: string; query: string; synthesis: string; spoken_summary: string; citations: any[]; retrieved_at?: string }>(
+    "/api/jarvis/live/research",
+    {
+      method: "POST",
+      body: JSON.stringify({ query, language: lang })
+    }
+  );
+}
+
+export async function fetchWindowsUpdates() {
+  return request<import("./types").WindowsUpdateIntel>("/api/jarvis/live/windows-updates");
+}
+
+export async function fetchLiveHistory(limit: number = 20) {
+  return request<{ queries: import("./types").LiveQueryHistoryItem[] }>(`/api/jarvis/live/history?limit=${limit}`);
+}
+
+
 
 

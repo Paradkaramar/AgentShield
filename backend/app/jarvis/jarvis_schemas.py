@@ -78,6 +78,8 @@ class JarvisMessageResponse(BaseModel):
     is_local_mode: bool = True
     audio_base64: Optional[str] = None
     personality_mode: Optional[str] = "friendly"
+    citations: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    live_intelligence: Optional[Dict[str, Any]] = None
 
 class JarvisBriefingResponse(BaseModel):
     timestamp: str

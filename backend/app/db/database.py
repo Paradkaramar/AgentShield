@@ -303,6 +303,26 @@ def init_db():
             UNIQUE(user_id, memory_key)
         );
 
+        CREATE TABLE IF NOT EXISTS live_intelligence_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cache_key TEXT UNIQUE NOT NULL,
+            category TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS live_intelligence_queries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT 'user',
+            query TEXT NOT NULL,
+            category TEXT NOT NULL,
+            sources_json TEXT NOT NULL DEFAULT '[]',
+            result_summary TEXT NOT NULL,
+            latency_ms INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS approved_scan_scopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,

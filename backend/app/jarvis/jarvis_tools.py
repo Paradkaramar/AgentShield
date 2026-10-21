@@ -26,6 +26,13 @@ from .personal_assistant import (
     open_windows_settings, analyze_suspicious_processes,
     prepare_firewall_rule_change, execute_multistep_task
 )
+from .live_intelligence import (
+    fetch_live_weather,
+    fetch_cybersecurity_intelligence,
+    perform_live_web_research,
+    search_live_news_rss,
+    check_windows_software_updates
+)
 
 
 # Registry of supported tool definitions with schemas
@@ -474,6 +481,48 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "steps": {"type": "array", "description": "Ordered list of tool call steps to execute"}
         },
         "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "get_live_weather": {
+        "description": "Fetch real-time weather and 4-day forecast for a city or coordinates via Open-Meteo.",
+        "category": "live_intelligence",
+        "parameters": {
+            "city": {"type": "string", "description": "City or location name (e.g. Pune, Mumbai, Delhi, London)"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_cybersecurity_intelligence": {
+        "description": "Query official CISA Known Exploited Vulnerabilities (KEV) Catalog and NIST/MITRE CVE advisories.",
+        "category": "live_intelligence",
+        "parameters": {
+            "query_or_cve": {"type": "string", "description": "CVE identifier (e.g. CVE-2024-38077) or security topic"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "search_live_news_and_tech": {
+        "description": "Fetch live news, AI model releases, technology announcements, and current developments.",
+        "category": "live_intelligence",
+        "parameters": {
+            "query": {"type": "string", "description": "Topic or search query (e.g. 'latest AI news', 'India news')"},
+            "freshness": {"type": "string", "description": "today, week, or month", "default": "week"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "perform_live_web_research": {
+        "description": "Execute multi-source live web research, compare independent sources, and provide verifiable citations.",
+        "category": "live_intelligence",
+        "parameters": {
+            "query": {"type": "string", "description": "Subject or question to research online"},
+            "freshness": {"type": "string", "description": "today, week, or month", "default": "week"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "check_windows_software_updates": {
+        "description": "Check official Microsoft Windows and application release updates, Patch Tuesday bulletins, and compare with locally installed OS version.",
+        "category": "live_intelligence",
+        "parameters": {
+            "software_name": {"type": "string", "description": "windows or application name", "default": "windows"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
     }
 }
 
@@ -1378,6 +1427,35 @@ def execute_execute_multistep_task(db: sqlite3.Connection, params: Dict[str, Any
         user=u
     )
 
+def execute_get_live_weather(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    city = params.get("city")
+    return fetch_live_weather(city=city)
+
+def execute_search_cybersecurity_intelligence(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    query_or_cve = params.get("query_or_cve", "")
+    return fetch_cybersecurity_intelligence(query_or_cve=query_or_cve)
+
+def execute_search_live_news_and_tech(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    query = params.get("query", "technology news")
+    freshness = params.get("freshness", "week")
+    articles = search_live_news_rss(topic=query, freshness=freshness)
+    return {
+        "status": "SUCCESS",
+        "query": query,
+        "freshness": freshness,
+        "total_articles": len(articles),
+        "articles": articles
+    }
+
+def execute_perform_live_web_research(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    query = params.get("query", "")
+    freshness = params.get("freshness", "week")
+    return perform_live_web_research(query=query, freshness=freshness)
+
+def execute_check_windows_software_updates(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    software_name = params.get("software_name", "windows")
+    return check_windows_software_updates(software_name=software_name)
+
 # Mapping of tool names to their execution functions
 TOOL_HANDLERS: Dict[str, Any] = {
     "get_security_dashboard_metrics": execute_get_security_dashboard_metrics,
@@ -1433,7 +1511,12 @@ TOOL_HANDLERS: Dict[str, Any] = {
     "open_windows_settings": execute_open_windows_settings,
     "analyze_suspicious_processes": execute_analyze_suspicious_processes,
     "prepare_firewall_rule_change": execute_prepare_firewall_rule_change,
-    "execute_multistep_task": execute_execute_multistep_task
+    "execute_multistep_task": execute_execute_multistep_task,
+    "get_live_weather": execute_get_live_weather,
+    "search_cybersecurity_intelligence": execute_search_cybersecurity_intelligence,
+    "search_live_news_and_tech": execute_search_live_news_and_tech,
+    "perform_live_web_research": execute_perform_live_web_research,
+    "check_windows_software_updates": execute_check_windows_software_updates
 }
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
