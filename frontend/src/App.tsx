@@ -5,6 +5,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { RealTimeMonitorPage } from "./pages/RealTimeMonitorPage";
 import { FirewallPage } from "./pages/FirewallPage";
 import { NetworkMonitoringPage } from "./pages/NetworkMonitoringPage";
+import { CyberGlobePage } from "./pages/CyberGlobePage";
 import { EndpointSecurityPage } from "./pages/EndpointSecurityPage";
 import { AgentsPage } from "./pages/AgentsPage";
 import { AgentLabPage } from "./pages/AgentLabPage";
@@ -128,7 +129,7 @@ export default function App() {
           onOpenJarvis={() => setIsJarvisOpen(true)}
         />
 
-        <div className="content">
+        <div className={`content ${currentPage === "Cyber Network Globe" ? "globe-content-mode" : ""}`}>
           {error && (
             <div className="alert error">
               <span><strong>Connection error:</strong> {error}</span>
@@ -160,7 +161,11 @@ export default function App() {
 
           {currentPage === "Three-Layer Firewall" && <FirewallPage />}
 
-          {currentPage === "Network Monitoring" && <NetworkMonitoringPage />}
+          {currentPage === "Network Monitoring" && (
+            <NetworkMonitoringPage onOpenGlobe={() => setCurrentPage("Cyber Network Globe")} />
+          )}
+          
+          {currentPage === "Cyber Network Globe" && <CyberGlobePage />}
 
           {currentPage === "Agents" && (
             <AgentsPage
@@ -223,7 +228,7 @@ export default function App() {
 
           {currentPage === "Forensic Dossiers" && <ForensicReportPage />}
 
-          {currentPage === "JARVIS Assistant" && (
+          {(currentPage === "JARVIS Assistant" || currentPage === "AMOJA AI Assistant") && (
             <JarvisPage
               onNavigatePage={setCurrentPage}
               selectedAgentId={agents[0]?.id}
@@ -246,19 +251,19 @@ export default function App() {
         </div>
       </main>
 
-      {/* Persistent Floating JARVIS HUD Launcher Button */}
+      {/* Persistent Floating AMOJA AI HUD Launcher Button */}
       <button
         type="button"
         className={`jarvis-floating-launcher ${isJarvisOpen ? "active" : ""}`}
         onClick={() => setIsJarvisOpen(prev => !prev)}
-        title="Toggle JARVIS AI Security Assistant (Ctrl+J)"
-        aria-label="Toggle JARVIS AI Security Assistant"
+        title="Toggle AMOJA AI Security Assistant (Ctrl+J)"
+        aria-label="Toggle AMOJA AI Security Assistant"
       >
         <span className="launcher-pulse-ring" />
         <div className="launcher-core">
           <Cpu size={22} className="launcher-icon" />
         </div>
-        <span className="launcher-label">JARVIS</span>
+        <span className="launcher-label">AMOJA</span>
       </button>
 
       {/* Sliding HUD Modal Drawer */}

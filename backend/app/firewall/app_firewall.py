@@ -85,8 +85,8 @@ class WAFRateLimiter:
         return True, current_count + 1, 0
 
 
-# Global singleton instance of rate limiter
-waf_rate_limiter = WAFRateLimiter(requests_per_minute=60)
+# Global singleton instance of rate limiter with higher baseline allowance for rich telemetry dashboards
+waf_rate_limiter = WAFRateLimiter(requests_per_minute=300)
 
 
 def redact_sensitive_waf_payload(data: Any) -> Any:
@@ -253,8 +253,9 @@ class AppFirewallMiddleware(BaseHTTPMiddleware):
                 pass
 
         # 3. Check Per-IP Rate Limiting
-        # Bypass rate limit for static assets, health probes, or internal testclient harness
-        if not path.startswith(("/assets", "/favicon.ico", "/health")) and client_ip != "testclient":
+        # Bypass rate limit for static assets, health probes, or local loopback/testclient requests from SOC frontend
+        is_loopback = client_ip in ("testclient", "127.0.0.1", "::1", "localhost", "0.0.0.0")
+        if not path.startswith(("/assets", "/favicon.ico", "/health")) and not is_loopback:
             allowed, current_count, retry_after = waf_rate_limiter.is_allowed(client_ip)
             if not allowed:
                 self._record_waf_event(
@@ -266,6 +267,10 @@ class AppFirewallMiddleware(BaseHTTPMiddleware):
                     details={"client_ip": client_ip, "rpm": rate_limit_rpm, "retry_after": retry_after}
                 )
                 headers = {"Retry-After": str(retry_after)}
+                origin = request.headers.get("origin", "")
+                if origin:
+                    headers["Access-Control-Allow-Origin"] = origin
+                    headers["Access-Control-Allow-Credentials"] = "true"
                 return JSONResponse(
                     status_code=429,
                     content={"error": "Rate Limit Exceeded", "message": f"Too many requests from {client_ip}. Please retry after {retry_after}s.", "request_id": request_id},
@@ -286,9 +291,15 @@ class AppFirewallMiddleware(BaseHTTPMiddleware):
                     details={"user_agent": user_agent}
                 )
                 if waf_mode == "BLOCKING":
+                    err_headers = {}
+                    origin = request.headers.get("origin", "")
+                    if origin:
+                        err_headers["Access-Control-Allow-Origin"] = origin
+                        err_headers["Access-Control-Allow-Credentials"] = "true"
                     return JSONResponse(
                         status_code=403,
-                        content={"error": "Forbidden", "message": "Access blocked by AgentShield Application Firewall (WAF).", "request_id": request_id}
+                        content={"error": "Forbidden", "message": "Access blocked by AgentShield Application Firewall (WAF).", "request_id": request_id},
+                        headers=err_headers
                     )
 
         # 5. Inspect Query Parameters & Path

@@ -61,6 +61,7 @@ class JarvisMessageRequest(BaseModel):
     is_voice: bool = False
     context: Optional[JarvisSecurityContext] = None
     personality_mode: Optional[str] = "friendly"
+    ai_mode: Optional[str] = "auto"  # "local" | "online" | "auto"
 
 class JarvisMessageResponse(BaseModel):
     session_id: str
@@ -80,6 +81,9 @@ class JarvisMessageResponse(BaseModel):
     personality_mode: Optional[str] = "friendly"
     citations: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
     live_intelligence: Optional[Dict[str, Any]] = None
+    ai_mode: Optional[str] = "auto"
+    model_used: Optional[str] = None
+    provider_used: Optional[str] = None
 
 class JarvisBriefingResponse(BaseModel):
     timestamp: str
@@ -127,6 +131,9 @@ class JarvisPreferences(BaseModel):
     mic_muted: bool = False
     push_to_talk_mode: bool = False
     personality_mode: str = "friendly"
+    ai_mode: str = "auto"  # "local" | "online" | "auto"
+    selected_online_provider: str = "gemini"
+    selected_local_model: str = "qwen2.5:3b"
 
 class JarvisAudioTranscribeRequest(BaseModel):
     audio_base64: str
@@ -200,3 +207,68 @@ class JarvisMemoryCreate(BaseModel):
     value: str
     category: str = "preference"
 
+# ==============================================================================
+# Unified AI Router & Local GGUF/Ollama Inference Schemas
+# ==============================================================================
+
+class AIChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000, description="User prompt or directive")
+    session_id: Optional[str] = Field(default=None, description="Optional conversation session ID")
+    mode: Optional[str] = Field(default="auto", description="Dual-model mode: 'local' (only local GGUF), 'online' (only cloud model), 'auto' (task & availability routing)")
+    provider: Optional[str] = Field(default="auto", description="Preferred provider: auto, local, gemini, openai, anthropic, heuristic")
+    model: Optional[str] = Field(default=None, description="Model identifier override (e.g. qwen2.5:3b, qwen3-4b)")
+    system_prompt: Optional[str] = Field(default=None, description="Custom system instruction")
+    temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(default=1024, ge=1, le=4096)
+    language: Optional[str] = Field(default="auto", description="Response language: auto, en, hi, mr, hinglish")
+    conversation_history: Optional[List[Dict[str, str]]] = Field(default=None, description="Past turns [{'role': 'user', 'content': '...'}]")
+
+class AIChatResponse(BaseModel):
+    response: str
+    speech_text: Optional[str] = None
+    provider_used: str
+    model_used: str
+    ai_mode_used: str = "auto"
+    is_local: bool
+    fallback_occurred: bool
+    fallback_reason: Optional[str] = None
+    execution_time_ms: int
+    session_id: Optional[str] = None
+    language_detected: str
+    created_at: str
+
+class AIHealthResponse(BaseModel):
+    status: str  # "HEALTHY", "DEGRADED", "OFFLINE"
+    local_runtime: Dict[str, Any]
+    cloud_providers: Dict[str, Any]
+    active_default_provider: str
+    storage: Dict[str, Any]
+    timestamp: str
+
+class AIProvidersResponse(BaseModel):
+    default_provider: str
+    configured_providers: List[Dict[str, Any]]
+
+class AIInferenceTestResult(BaseModel):
+    model_type: str  # "local" | "online"
+    provider: str    # "ollama" | "gemini" | "openai" | "anthropic"
+    model: str
+    status: str      # "PASS" | "FAIL"
+    latency_ms: int
+    test_prompt: str
+    response: Optional[str] = None
+    error: Optional[str] = None
+    tested_at: str
+
+class AIDualModelStatus(BaseModel):
+    current_mode: str  # "local" | "online" | "auto"
+    local_model: Dict[str, Any]
+    online_model: Dict[str, Any]
+    storage: Dict[str, Any]
+    active_in_ui: str
+    both_working: bool = False
+    timestamp: str
+
+class AITestModelRequest(BaseModel):
+    model: Optional[str] = None
+    provider: Optional[str] = None

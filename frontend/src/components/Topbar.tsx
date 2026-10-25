@@ -41,7 +41,7 @@ export const Topbar: React.FC<Props> = ({
         >
           <span className="jarvis-topbar-pulse" />
           <Cpu size={15} />
-          <span>JARVIS AI</span>
+          <span>AMOJA AI</span>
         </button>
 
         <button className="icon-button" onClick={onRefresh} title="Refresh System Telemetry">

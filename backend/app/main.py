@@ -22,7 +22,10 @@ from .api import (
     jarvis_routes,
     network_routes,
     firewall_routes,
-    endpoint_routes
+    endpoint_routes,
+    rea_routes,
+    ai_routes,
+    globe_routes
 )
 from .services.network_monitor import network_monitoring_service
 from .firewall.app_firewall import AppFirewallMiddleware
@@ -73,6 +76,9 @@ app.include_router(jarvis_routes.router)
 app.include_router(network_routes.router)
 app.include_router(firewall_routes.router)
 app.include_router(endpoint_routes.router)
+app.include_router(rea_routes.router)
+app.include_router(ai_routes.router)
+app.include_router(globe_routes.router)
 
 @app.get("/health", tags=["Health & Status"])
 def health_check():

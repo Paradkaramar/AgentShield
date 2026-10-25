@@ -22,7 +22,11 @@ from ..jarvis.personal_assistant import (
     create_note, search_notes, list_notes, delete_note,
     add_todo_item, list_todo_items, toggle_todo_item,
     store_user_memory, list_user_memories, delete_user_memory, clear_all_user_memories,
-    APPROVED_APPLICATIONS
+    APPROVED_APPLICATIONS,
+    launch_approved_application, close_approved_application,
+    search_authorized_files, open_authorized_file_or_folder,
+    prepare_whatsapp_message, get_windows_system_status,
+    open_windows_settings
 )
 from ..jarvis.jarvis_service import (
     process_jarvis_turn, execute_confirmed_action, generate_proactive_briefing
@@ -49,6 +53,24 @@ class LiveResearchRequest(BaseModel):
     query: str
     freshness: Optional[str] = "week"
     force_refresh: Optional[bool] = False
+
+class AppLaunchRequest(BaseModel):
+    app_name: str
+
+class AppCloseRequest(BaseModel):
+    app_name: str
+    force: Optional[bool] = False
+
+class FileOpenRequest(BaseModel):
+    filepath: str
+
+class WhatsAppRequest(BaseModel):
+    recipient: str
+    message: str
+    attachment_path: Optional[str] = None
+
+class WindowsSettingsRequest(BaseModel):
+    setting_page: Optional[str] = "settings"
 
 router = APIRouter(prefix="/api/jarvis", tags=["JARVIS AI Security Assistant"])
 
@@ -437,6 +459,75 @@ def search_history(
     user_id = current_user.get("username", "admin")
     matches = search_conversation_history(user_id, q, limit=limit)
     return {"query": q, "count": len(matches), "results": matches}
+
+# --- Personal Assistant: Windows Applications, Files & Device Controls ---
+@router.get("/personal/apps")
+def get_approved_apps(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Returns the whitelist of approved applications."""
+    return {"apps": APPROVED_APPLICATIONS}
+
+@router.post("/personal/launch-app")
+def post_launch_app(
+    payload: AppLaunchRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Launches an approved desktop application safely."""
+    role = current_user.get("role", "operator")
+    return launch_approved_application(payload.app_name, user_role=role)
+
+@router.post("/personal/close-app")
+def post_close_app(
+    payload: AppCloseRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Closes running instances of an approved application safely."""
+    role = current_user.get("role", "operator")
+    return close_approved_application(payload.app_name, force=payload.force or False, user_role=role)
+
+@router.get("/personal/files")
+def get_authorized_files(
+    query: str = Query(default=""),
+    scope: Optional[str] = Query(default=None),
+    max_results: int = Query(default=20, ge=1, le=50),
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Searches authorized files within user scopes without path traversal."""
+    return search_authorized_files(query=query, scope=scope, max_results=max_results)
+
+@router.post("/personal/open-file")
+def post_open_file(
+    payload: FileOpenRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Opens an authorized file or folder safely."""
+    return open_authorized_file_or_folder(payload.filepath)
+
+@router.post("/personal/whatsapp")
+def post_whatsapp(
+    payload: WhatsAppRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Prepares WhatsApp message with recipient verification and confirmation."""
+    role = current_user.get("role", "operator")
+    return prepare_whatsapp_message(
+        recipient=payload.recipient,
+        message=payload.message,
+        attachment_path=payload.attachment_path,
+        user_role=role
+    )
+
+@router.get("/personal/windows-status")
+def get_windows_status(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Retrieves approved Windows system telemetry."""
+    return get_windows_system_status()
+
+@router.post("/personal/windows-settings")
+def post_windows_settings(
+    payload: WindowsSettingsRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Opens approved Windows Settings page."""
+    return open_windows_settings(payload.setting_page or "settings")
 
 # --- System, Privacy & Hybrid AI Status ---
 @router.get("/system/status")

@@ -79,6 +79,7 @@ graph TD
 | 40 | **AN**| Compromised Agent Forensics | `app/engines/reverse_engineering.py` | **Complete** |
 | 41 | **AO**| Defensive Reverse Engineering Detection | `app/engines/reverse_engineering.py` | **Complete** |
 | 42 | **AP**| JARVIS AI Autonomous Assistant & Voice Interface | `app/jarvis/`, `app/api/jarvis_routes.py`, `frontend/src/components/jarvis/` | **Complete** |
+| 43 | **AQ**| REA (Reverse Engineer Anything) Forensics Lab | `app/engines/rea_engine.py`, `app/api/rea_routes.py` | **Complete** |
 
 ---
 
@@ -241,12 +242,60 @@ npm install
 npm run dev
 ```
 - Dashboard UI: `http://localhost:5173`
+- Reverse Engineering Lab: `http://localhost:5173/reverse-engineering`
 
-### 3. Run Automated Multilingual & Security Test Suite (57 Tests)
+### 3. Run Automated Comprehensive Test Suite (242 Tests)
 ```powershell
 cd backend
 .\.venv\Scripts\python -m pytest -v
 ```
+
+---
+
+## Reverse Engineering Lab & Binary Forensics Suite
+
+The **AgentShield Reverse Engineering Lab** provides a defense-grade forensic investigation environment tailored for autonomous agent artifacts, suspicious plugins, PE/ELF binaries, and scripts:
+
+### Key Capabilities:
+- **Zero-Trust Host Execution Protection**: Direct execution on the host Windows machine is **strictly disabled**. Dynamic behaviors are statically parsed or isolated via disposable sandbox semantics.
+- **Cryptographic Hashing & Entropy**: Real-time SHA-256, SHA-1, and MD5 calculation with Shannon entropy gauge and packed section alerts.
+- **PE / ELF Deep Header Parser**: Parses architectures (x86, x64, ARM, MIPS), subsystem, compile timestamp, and section table flags with packing detection.
+- **Dangerous API & Import Mapping**: Detects memory injection, process hollowing, token manipulation, and unapproved egress primitives mapped directly to MITRE ATT&CK techniques.
+- **Static Strings & IOC Extractor**: Isolates IPv4 addresses, domains/URLs, Windows Registry keys, file paths, and high-entropy base64 blobs.
+- **Source Code AST Inspector**: Safe Abstract Syntax Tree static analysis for Python (`ast` visitor), PowerShell, Bash, and JavaScript/TypeScript.
+- **YARA Signature Scanning**: Native YARA scanning with built-in AgentShield heuristic fallback rules (UPX, mimikatz, webshells, ransomware strings, stagers).
+- **Ghidra SRE Headless Bridge**: Optional integration with Ghidra's `analyzeHeadless` utility for headless disassembly and decompilation without shell execution.
+- **REA (Reverse Engineer Anything) Subsystem**: Full integration with `morluto/rea` (v6.7.0) supporting offline SQLite schema snapshots, JavaScript & Electron application dependency graphs, .NET PE/CLI CIL assemblies, AI models (GGUF/Safetensors), Go build metadata, and WebAssembly.
+- **AMOJA AI / JARVIS Multilingual Forensics**: Bilingual incident briefings in English and Hinglish (Romanized / Devnagari), plus interactive natural-language forensic Q&A with 3-tier fact separation (Observed Facts vs. Inferred Risks vs. Unknowns).
+- **Cryptographic Dossier Export**: One-click exportable JSON and plain-text investigation dossiers sealed with a SHA-256 tamper-evident integrity hash.
+
+### REA (Reverse Engineer Anything) Setup on Windows:
+1. **Node.js Prerequisite**: Requires Node.js `>=22.19`, `>=24.11`, or `26+`. Verified on Windows 11 with Node.js `v24.18.0`.
+2. **Install REA Globally**:
+   ```bash
+   npm install --global rea-agents
+   ```
+3. **Verify Installation**:
+   ```bash
+   rea --version
+   ```
+   Should print `6.7.0` (or later).
+4. **AgentShield Integration Points**:
+   - Backend Engine: `backend/app/engines/rea_engine.py` runs commands in process-isolated subprocesses with list arguments (`shell=False`), 25MB file caps, and 60-second timeouts.
+   - API Router: `backend/app/api/rea_routes.py` exposed at `/api/rea/status`, `/api/rea/upload`, `/api/rea/inspect-path`, `/api/rea/explain`, and `/api/rea/history`.
+   - UI Panel: `frontend/src/components/ReaLabPanel.tsx` embedded natively inside the Reverse Engineering Lab page.
+   - Audit Ledger: Every REA scan is chained cryptographically into SQLite `audit_log` via SHA-256.
+
+### Optional Dependencies Setup:
+- **YARA**: `pip install yara-python` (if native compilation tools are present). AgentShield automatically falls back to its built-in rule signature scanner if native YARA is not installed.
+- **Ghidra SRE**:
+  1. Download Ghidra from [ghidra-sre.org](https://ghidra-sre.org/).
+  2. Extract to a local directory (e.g., `C:\Tools\ghidra`).
+  3. Set the environment variable `GHIDRA_HOME`:
+     ```powershell
+     [System.Environment]::SetEnvironmentVariable("GHIDRA_HOME", "C:\Tools\ghidra", "User")
+     ```
+  4. AgentShield will automatically detect `analyzeHeadless.bat` and enable Ghidra static decompilation. If not detected, clear diagnostic guidance is displayed without crashing.
 
 ---
 
@@ -255,4 +304,3 @@ cd backend
 docker-compose up --build
 ```
 This builds and launches both the FastAPI backend on port 8000 and the Vite production Nginx container on port 5173.
-# AgentShield

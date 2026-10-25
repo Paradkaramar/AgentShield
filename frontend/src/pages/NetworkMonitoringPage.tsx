@@ -12,7 +12,7 @@ import {
 } from "../types";
 import { request } from "../api";
 
-export const NetworkMonitoringPage: React.FC = () => {
+export const NetworkMonitoringPage: React.FC<{ onOpenGlobe?: () => void }> = ({ onOpenGlobe }) => {
   const [status, setStatus] = useState<NetworkMonitoringStatus | null>(null);
   const [scopes, setScopes] = useState<ApprovedScope[]>([]);
   const [exclusions, setExclusions] = useState<NetworkExclusion[]>([]);
@@ -347,6 +347,24 @@ export const NetworkMonitoringPage: React.FC = () => {
 
           {/* Action Toolbar */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            {onOpenGlobe && (
+              <button
+                className="btn btn-secondary"
+                onClick={onOpenGlobe}
+                title="Launch Google Earth-style 3D Cyber Globe"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                  background: "rgba(0, 240, 255, 0.12)",
+                  border: "1px solid rgba(0, 240, 255, 0.4)",
+                  color: "#00f0ff"
+                }}
+              >
+                <Globe size={15} /> 3D Cyber Globe
+              </button>
+            )}
+
             <button
               className="btn btn-secondary"
               onClick={loadAllData}
@@ -434,6 +452,27 @@ export const NetworkMonitoringPage: React.FC = () => {
                 >
                   <AlertOctagon size={16} /> Emergency Stop
                 </button>
+
+                {onOpenGlobe && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={onOpenGlobe}
+                    style={{
+                      background: "linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(16, 185, 129, 0.25))",
+                      border: "1px solid #00f0ff",
+                      color: "#00f0ff",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      fontWeight: 700,
+                      boxShadow: "0 0 14px rgba(0, 240, 255, 0.25)"
+                    }}
+                    title="Open interactive 3D Earth Globe and Network Scanner"
+                  >
+                    <Globe size={16} style={{ color: "#00f0ff" }} /> 3D Cyber Globe Scanner
+                  </button>
+                )}
               </>
             )}
           </div>

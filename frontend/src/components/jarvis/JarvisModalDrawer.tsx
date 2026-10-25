@@ -52,6 +52,7 @@ export const JarvisModalDrawer: React.FC<Props> = ({
   const [preferences, setPreferences] = useState<JarvisPreferences | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [personalityMode, setPersonalityMode] = useState<"friendly" | "security">("friendly");
+  const [aiMode, setAiMode] = useState<"local" | "online" | "auto">("auto");
 
   // Load preferences, permissions, and briefing on open
   useEffect(() => {
@@ -68,6 +69,7 @@ export const JarvisModalDrawer: React.FC<Props> = ({
         setIsMicMuted(Boolean(prefs.mic_muted));
         setIsWakeWordEnabled(Boolean(prefs.wake_word_enabled));
         setSelectedLanguage(prefs.default_language || "auto");
+        if (prefs.ai_mode) setAiMode(prefs.ai_mode);
         jarvisVoice.setMicrophoneMuted(Boolean(prefs.mic_muted));
         jarvisVoice.setWakeWordEnabled(Boolean(prefs.wake_word_enabled));
         jarvisVoice.setSpeechSettings(
@@ -179,7 +181,7 @@ export const JarvisModalDrawer: React.FC<Props> = ({
     }
   };
 
-  const handleUserMessage = async (text: string, isVoice = false) => {
+  const handleUserMessage = async (text: string, isVoice = false, aiModeParam?: "local" | "online" | "auto") => {
     try {
       setIsProcessing(true);
       setJarvisState("PROCESSING");
@@ -200,11 +202,13 @@ export const JarvisModalDrawer: React.FC<Props> = ({
       };
       setMessages(prev => [...prev, userMsg]);
 
+      const effectiveMode = aiModeParam || aiMode;
       const res = await sendJarvisMessage(text, {
         sessionId,
         language: selectedLanguage,
         isVoice,
         personalityMode,
+        aiMode: effectiveMode,
         context
       });
 
@@ -220,7 +224,10 @@ export const JarvisModalDrawer: React.FC<Props> = ({
         tool_results: res.tool_results,
         action_required: res.action_required,
         navigation_target: res.navigation_target,
-        created_at: res.created_at
+        created_at: res.created_at,
+        ai_mode: res.ai_mode,
+        model_used: res.model_used,
+        provider_used: res.provider_used
       };
       setMessages(prev => [...prev, assistantMsg]);
 
@@ -534,6 +541,8 @@ export const JarvisModalDrawer: React.FC<Props> = ({
               errorMessage={errorMessage}
               personalityMode={personalityMode}
               onTogglePersonalityMode={setPersonalityMode}
+              aiMode={aiMode}
+              onSelectAiMode={setAiMode}
             />
           </div>
         </div>

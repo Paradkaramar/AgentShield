@@ -26,3 +26,15 @@ SECRET_VAULT = {
     "DB_PROD_PASSWORD": "vaulted_db_pass_redacted_for_security",
     "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T00/B00/X00MOCK",
 }
+
+# Local AI Runtime & Router Configuration (Ollama / Hugging Face GGUF)
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "45.0"))
+OLLAMA_MODELS_DIR = os.getenv("OLLAMA_MODELS", str(BASE_DIR.parent / "ollama_models"))
+
+AI_ROUTER_DEFAULT_PROVIDER = os.getenv("AI_ROUTER_DEFAULT_PROVIDER", os.getenv("JARVIS_LLM_PROVIDER", "auto")).lower()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+

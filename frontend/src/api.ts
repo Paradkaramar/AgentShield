@@ -1,4 +1,6 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = (typeof window !== "undefined" && window.location.port === "5173")
+  ? ""
+  : "http://127.0.0.1:8000";
 
 let authToken = localStorage.getItem("agentshield_token") || "";
 
@@ -16,8 +18,9 @@ export function getAuthToken(): string {
 }
 
 export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && options?.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options?.headers as Record<string, string> || {})
   };
 
@@ -47,6 +50,7 @@ export async function sendJarvisMessage(
     isVoice?: boolean;
     context?: import("./types").JarvisSecurityContext;
     personalityMode?: "friendly" | "security";
+    aiMode?: "local" | "online" | "auto";
   }
 ) {
   return request<any>("/api/jarvis/chat", {
@@ -57,7 +61,8 @@ export async function sendJarvisMessage(
       language: options?.language || "auto",
       is_voice: options?.isVoice || false,
       context: options?.context,
-      personality_mode: options?.personalityMode || "friendly"
+      personality_mode: options?.personalityMode || "friendly",
+      ai_mode: options?.aiMode || "auto"
     })
   });
 }
@@ -401,6 +406,239 @@ export async function fetchLiveHistory(limit: number = 20) {
   return request<{ queries: import("./types").LiveQueryHistoryItem[] }>(`/api/jarvis/live/history?limit=${limit}`);
 }
 
+// =============================================================================
+// REVERSE ENGINEERING LAB API
+// =============================================================================
 
+export async function uploadReLabFile(file: File): Promise<import("./types").ReLabAnalysis> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<import("./types").ReLabAnalysis>("/api/forensics/re-lab/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
+export async function analyzeReLabCode(
+  code: string,
+  language: string,
+  filename?: string
+): Promise<import("./types").ReLabAnalysis> {
+  return request<import("./types").ReLabAnalysis>("/api/forensics/re-lab/analyze-code", {
+    method: "POST",
+    body: JSON.stringify({ code, language, filename })
+  });
+}
+
+export async function getReLabHistory(): Promise<import("./types").ReLabAnalysis[]> {
+  return request<import("./types").ReLabAnalysis[]>("/api/forensics/re-lab/history");
+}
+
+export async function getReLabAnalysisDetail(analysisId: string): Promise<import("./types").ReLabAnalysis> {
+  return request<import("./types").ReLabAnalysis>(`/api/forensics/re-lab/analysis/${encodeURIComponent(analysisId)}`);
+}
+
+export async function getReLabToolsStatus(): Promise<import("./types").ReLabToolsStatus> {
+  return request<import("./types").ReLabToolsStatus>("/api/forensics/re-lab/tools-status");
+}
+
+export async function askAmojaReLab(
+  analysisId: string,
+  question: string,
+  language: string = "auto"
+): Promise<{ analysis_id: string; question: string; answer: string; language: string; grounded_sample: string }> {
+  return request("/api/forensics/re-lab/ai-explain", {
+    method: "POST",
+    body: JSON.stringify({ analysis_id: analysisId, question, language })
+  });
+}
+
+export function getReLabReportDownloadUrl(analysisId: string, format: "json" | "txt" = "json"): string {
+  return `${API_BASE}/api/forensics/re-lab/report/${encodeURIComponent(analysisId)}/download?format=${format}`;
+}
+
+// =============================================================================
+// REA (REVERSE ENGINEER ANYTHING) LAB API
+// =============================================================================
+
+export async function getReaStatus(): Promise<import("./types").ReaStatus> {
+  return request<import("./types").ReaStatus>("/api/rea/status");
+}
+
+export async function uploadReaArtifact(file: File, workflow?: string): Promise<import("./types").ReaInvestigation> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (workflow) formData.append("workflow", workflow);
+  return request<import("./types").ReaInvestigation>("/api/rea/upload", {
+    method: "POST",
+    body: formData
+  });
+}
+
+export async function inspectReaPath(path: string, workflow?: string): Promise<import("./types").ReaInvestigation> {
+  return request<import("./types").ReaInvestigation>("/api/rea/inspect-path", {
+    method: "POST",
+    body: JSON.stringify({ path, workflow })
+  });
+}
+
+export async function askAmojaRea(
+  analysisId: string,
+  question: string,
+  language: string = "en"
+): Promise<{
+  analysis_id: string;
+  filename: string;
+  workflow: string;
+  observed_facts: string[];
+  inferred_risks: string[];
+  limitations: string[];
+  english_briefing: string;
+  hinglish_briefing: string;
+  custom_answer?: string | null;
+  language_served: string;
+}> {
+  return request("/api/rea/explain", {
+    method: "POST",
+    body: JSON.stringify({ analysis_id: analysisId, question, language })
+  });
+}
+
+export async function getReaHistory(): Promise<any[]> {
+  return request<any[]>("/api/rea/history");
+}
+
+export async function getAuthorizedReaTargets(): Promise<import("./types").ReaAuthorizedTarget[]> {
+  return request<import("./types").ReaAuthorizedTarget[]>("/api/rea/authorized-targets");
+}
+
+export async function validateReaTarget(targetPath: string): Promise<import("./types").ReaTargetValidation> {
+  return request<import("./types").ReaTargetValidation>("/api/rea/validate-target", {
+    method: "POST",
+    body: JSON.stringify({ target_path: targetPath })
+  });
+}
+
+export async function generateReaReport(
+  analysisId?: string,
+  investigation?: any
+): Promise<import("./types").ReaForensicReport> {
+  return request<import("./types").ReaForensicReport>("/api/rea/generate-report", {
+    method: "POST",
+    body: JSON.stringify({ analysis_id: analysisId, investigation })
+  });
+}
+
+// =============================================================================
+// PERSONAL ASSISTANT API (Windows Apps, Files, WhatsApp, System Status)
+// =============================================================================
+
+export async function getApprovedApps(): Promise<{ apps: Record<string, any> }> {
+  return request<{ apps: Record<string, any> }>("/api/jarvis/personal/apps");
+}
+
+export async function launchApprovedApp(appName: string): Promise<any> {
+  return request<any>("/api/jarvis/personal/launch-app", {
+    method: "POST",
+    body: JSON.stringify({ app_name: appName })
+  });
+}
+
+export async function closeApprovedApp(appName: string, force = false): Promise<any> {
+  return request<any>("/api/jarvis/personal/close-app", {
+    method: "POST",
+    body: JSON.stringify({ app_name: appName, force })
+  });
+}
+
+export async function getAuthorizedFiles(query = "", scope?: string): Promise<{
+  query: string;
+  total_matches: number;
+  authorized_scopes: string[];
+  matches: Array<{
+    name: string;
+    filename: string;
+    relative_path: string;
+    full_path: string;
+    scope: string;
+    is_dir: boolean;
+    size_bytes: number;
+    modified_at: string;
+  }>;
+}> {
+  const params = new URLSearchParams();
+  if (query) params.append("query", query);
+  if (scope) params.append("scope", scope);
+  return request(`/api/jarvis/personal/files?${params.toString()}`);
+}
+
+export async function openAuthorizedFile(filepath: string): Promise<any> {
+  return request<any>("/api/jarvis/personal/open-file", {
+    method: "POST",
+    body: JSON.stringify({ filepath })
+  });
+}
+
+export async function prepareWhatsAppMessage(
+  recipient: string,
+  message: string,
+  attachmentPath?: string
+): Promise<any> {
+  return request<any>("/api/jarvis/personal/whatsapp", {
+    method: "POST",
+    body: JSON.stringify({
+      recipient,
+      message,
+      attachment_path: attachmentPath
+    })
+  });
+}
+
+export async function getWindowsSystemStatus(): Promise<any> {
+  return request<any>("/api/jarvis/personal/windows-status");
+}
+
+export async function openWindowsSettings(settingPage: string = "settings"): Promise<any> {
+  return request<any>("/api/jarvis/personal/windows-settings", {
+    method: "POST",
+    body: JSON.stringify({ setting_page: settingPage })
+  });
+}
+
+// Unified Local & Cloud AI Router API
+export async function getAIHealth(): Promise<import("./types").AIHealthResponsePayload> {
+  return request<import("./types").AIHealthResponsePayload>("/api/ai/health");
+}
+
+export async function getAIProviders(): Promise<import("./types").AIProvidersResponsePayload> {
+  return request<import("./types").AIProvidersResponsePayload>("/api/ai/providers");
+}
+
+export async function sendAIChat(
+  payload: import("./types").AIChatRequestPayload
+): Promise<import("./types").AIChatResponsePayload> {
+  return request<import("./types").AIChatResponsePayload>("/api/ai/chat", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getDualModelStatus(mode: string = "auto"): Promise<import("./types").AIDualModelStatusPayload> {
+  return request<import("./types").AIDualModelStatusPayload>(`/api/ai/status?mode=${encodeURIComponent(mode)}`);
+}
+
+export async function testLocalModel(model?: string): Promise<import("./types").AIInferenceTestResultPayload> {
+  return request<import("./types").AIInferenceTestResultPayload>("/api/ai/test/local", {
+    method: "POST",
+    body: JSON.stringify(model ? { model } : {})
+  });
+}
+
+export async function testOnlineModel(provider?: string): Promise<import("./types").AIInferenceTestResultPayload> {
+  return request<import("./types").AIInferenceTestResultPayload>("/api/ai/test/online", {
+    method: "POST",
+    body: JSON.stringify(provider ? { provider } : {})
+  });
+}
 
 

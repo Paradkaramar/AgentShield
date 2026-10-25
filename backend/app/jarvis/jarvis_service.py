@@ -18,8 +18,9 @@ from ..core.config import SECRET_VAULT
 from .jarvis_schemas import (
     JarvisMessageRequest, JarvisMessageResponse, JarvisState, JarvisLanguage,
     JarvisToolCall, JarvisToolResult, JarvisConfirmationRequest, JarvisSecurityContext,
-    JarvisBriefingResponse
+    JarvisBriefingResponse, AIChatRequest
 )
+from .ai_router import ai_router
 from .jarvis_security import (
     check_message_for_prompt_injection, verify_tool_authorization,
     check_requires_confirmation, sanitize_assistant_output, log_jarvis_action
@@ -1191,6 +1192,33 @@ def synthesize_response_nlp(
             speech = f"Device has been disconnected from the dashboard, {user_name}."
         return text, speech
 
+    if tool_name == "re_lab_list_samples":
+        samples = tool_result_data.get("samples", [])
+        if not samples:
+            text = "🔬 **Reverse Engineering Lab:** No analyzed samples found. Upload a file or analyze code to begin static triage."
+            speech = "Reverse Engineering Lab has no current samples loaded."
+            return text, speech
+        items = "\n".join([f"- **`{s.get('filename')}`** [{s.get('severity')}] Verdict: `{s.get('verdict')}` (SHA-256: `{s.get('sha256_hash', '')[:12]}...`)" for s in samples[:5]])
+        if lang in {"hi", "hinglish"}:
+            text = f"🔬 **Reverse Engineering Lab Investigations ({len(samples)}):**\n\n{items}\n\n*Host Direct Execution: DISABLED (Zero-Trust Static Sandbox Enforced)*"
+            speech = f"Reverse Engineering Lab mein {len(samples)} samples available hain. Screen par summary dekhein."
+        else:
+            text = f"🔬 **Reverse Engineering Lab Investigations ({len(samples)}):**\n\n{items}\n\n*Zero-Trust Policy: Direct host execution strictly disabled. Analysis performed via static parsing.*"
+            speech = f"Retrieved {len(samples)} reverse engineering investigation samples from the lab."
+        return text, speech
+
+    if tool_name == "re_lab_get_analysis":
+        sample = tool_result_data.get("sample", {})
+        if not sample:
+            return "Sample not found.", "Sample not found in Reverse Engineering Lab."
+        if lang in {"hi", "hinglish"} and sample.get("ai_explanation_hinglish"):
+            text = f"🔬 **AMOJA AI Reverse Engineering Briefing:**\n\n{sample.get('ai_explanation_hinglish')}"
+            speech = f"Sample {sample.get('filename')} ka reverse engineering analysis screen par ready hai."
+        else:
+            text = f"🔬 **AMOJA AI Reverse Engineering Dossier:**\n\n{sample.get('ai_explanation_en')}"
+            speech = f"Reverse engineering analysis for {sample.get('filename')} is ready with verdict {sample.get('verdict')}."
+        return text, speech
+
     # --- Personal Assistant & Productivity Tools Response Formatting ---
     if tool_name == "create_reminder":
         rem = tool_result_data
@@ -1824,6 +1852,9 @@ async def process_jarvis_turn(
     tool_calls = []
     tool_results = []
     action_req: Optional[JarvisConfirmationRequest] = None
+    ai_mode_used = getattr(request, "ai_mode", "auto") or "auto"
+    model_used = None
+    provider_used = None
 
     if tool_name:
         tool_meta = TOOL_REGISTRY.get(tool_name, {})
@@ -1947,16 +1978,61 @@ async def process_jarvis_turn(
         )
     else:
         personality_mode = getattr(request, "personality_mode", "friendly") or "friendly"
-        # If no tool matched, generate helpful assistant response
-        raw_text, speech_text = synthesize_response_nlp(
-            user_prompt=request.message,
-            lang=user_lang,
-            tool_name=None,
-            tool_result_data=None,
-            action_req=None,
-            user=user,
-            personality_mode=personality_mode
-        )
+        p_low = (request.message or "").lower()
+        has_specific_conversational_intent = any(q in p_low for q in [
+            "how are you", "kaise ho", "kaisa hai", "kashi aahes", "kasa ahes", "kase ahat", "aap kaise",
+            "tum kya kar sakti ho", "tum kya kar sakte ho", "kya kar sakti ho", "kya kar sakte ho",
+            "kya karti ho", "what can you do", "kay karu shakte", "kay karu shaktes", "aap kya kar sakti",
+            "आप क्या कर सकती", "काय करू शकते", "तुम क्या कर सकती हो",
+            "explain this in english", "explain in english", "in english", "switch to english",
+            "slow", "धीमा", "धीमे", "मंद", "lag"
+        ])
+
+        ai_mode_used = getattr(request, "ai_mode", "auto") or "auto"
+        model_used = None
+        provider_used = None
+
+        if has_specific_conversational_intent:
+            raw_text, speech_text = synthesize_response_nlp(
+                user_prompt=request.message,
+                lang=user_lang,
+                tool_name=None,
+                tool_result_data=None,
+                action_req=None,
+                user=user,
+                personality_mode=personality_mode
+            )
+        else:
+            # Route open-ended queries through AI Router (local Ollama / Cloud / Heuristic)
+            try:
+                recent_msgs = get_session_history(session_id, u_name, limit=6)
+                history_turns = []
+                for m in recent_msgs:
+                    history_turns.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+                ai_req = AIChatRequest(
+                    message=request.message,
+                    session_id=session_id,
+                    mode=ai_mode_used,
+                    language=user_lang,
+                    conversation_history=history_turns
+                )
+                ai_res = await ai_router.route_and_generate(ai_req, user=user)
+                raw_text = ai_res.response
+                speech_text = ai_res.speech_text or raw_text[:120]
+                ai_mode_used = ai_res.ai_mode_used
+                model_used = ai_res.model_used
+                provider_used = ai_res.provider_used
+            except Exception:
+                raw_text, speech_text = synthesize_response_nlp(
+                    user_prompt=request.message,
+                    lang=user_lang,
+                    tool_name=None,
+                    tool_result_data=None,
+                    action_req=None,
+                    user=user,
+                    personality_mode=personality_mode
+                )
 
     # Sanitize output (ensure no secrets leaked in output)
     clean_text = sanitize_assistant_output(raw_text)
@@ -2016,11 +2092,14 @@ async def process_jarvis_turn(
         security_context=current_context,
         created_at=now_iso(),
         audio_confidence=0.95 if request.is_voice else None,
-        is_local_mode=is_local_mode,
+        is_local_mode=(is_local_mode if not provider_used else (provider_used.startswith("local") or provider_used.startswith("offline"))),
         audio_base64=audio_b64,
         personality_mode=personality_mode,
         citations=citations_list,
-        live_intelligence=live_meta
+        live_intelligence=live_meta,
+        ai_mode=ai_mode_used,
+        model_used=model_used,
+        provider_used=provider_used
     )
 
 def execute_confirmed_action(

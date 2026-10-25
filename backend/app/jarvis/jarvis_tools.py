@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
@@ -32,6 +33,13 @@ from .live_intelligence import (
     perform_live_web_research,
     search_live_news_rss,
     check_windows_software_updates
+)
+from ..engines.rea_engine import (
+    check_rea_status,
+    analyze_target_with_rea,
+    generate_amoja_rea_explanation,
+    validate_rea_target,
+    generate_rea_forensic_report
 )
 
 
@@ -523,6 +531,43 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
             "software_name": {"type": "string", "description": "windows or application name", "default": "windows"}
         },
         "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "re_lab_list_samples": {
+        "description": "List all analyzed files, binaries, and code payloads in the Reverse Engineering Lab with hashes, verdicts, and severity.",
+        "category": "cybersecurity",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "re_lab_get_analysis": {
+        "description": "Retrieve comprehensive reverse engineering telemetry, indicators, strings, and AMOJA AI forensic briefing for a sample.",
+        "category": "cybersecurity",
+        "parameters": {
+            "sample_id_or_hash": {"type": "string", "description": "Analysis ID (e.g. re-analysis-001) or SHA-256 hash"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "rea_get_status": {
+        "description": "Check real-time operational health of REA (Reverse Engineer Anything) v6.7.0, Node.js version, and configured providers.",
+        "category": "cybersecurity",
+        "parameters": {},
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
+    },
+    "rea_inspect_target": {
+        "description": "Execute static reverse-engineering and code analysis on an authorized application (e.g. 'desktop' Electron app), database, or artifact using REA without executing code on the host.",
+        "category": "cybersecurity",
+        "parameters": {
+            "target_path": {"type": "string", "description": "Authorized target (e.g. 'desktop', 'frontend/src', 'backend/data/agentshield.db', or quarantined vault file)", "default": "desktop"},
+            "workflow": {"type": "string", "description": "Workflow: auto, analyze-javascript-application, inspect-sqlite-database, inspect-artifact", "default": "auto"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator"]
+    },
+    "rea_generate_report": {
+        "description": "Generate an evidence-based forensic investigation report and audit dossier for an analyzed target or sample.",
+        "category": "cybersecurity",
+        "parameters": {
+            "analysis_id": {"type": "string", "description": "Investigation ID or SHA-256 hash of the analyzed target"}
+        },
+        "allowed_roles": ["admin", "security_analyst", "operator", "auditor"]
     }
 }
 
@@ -658,6 +703,7 @@ def execute_search_audit_logs(db: sqlite3.Connection, params: Dict[str, Any]) ->
         results.append(d)
 
     return {
+        "status": "SUCCESS",
         "count": len(results),
         "query": query_str,
         "audit_entries": results
@@ -1456,6 +1502,163 @@ def execute_check_windows_software_updates(db: sqlite3.Connection, params: Dict[
     software_name = params.get("software_name", "windows")
     return check_windows_software_updates(software_name=software_name)
 
+def execute_re_lab_list_samples(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    rows = db.execute("SELECT id, filename, file_size, sha256_hash, file_type, severity, verdict, created_at FROM re_lab_analyses ORDER BY created_at DESC LIMIT 20").fetchall()
+    return {
+        "status": "SUCCESS",
+        "total_samples": len(rows),
+        "samples": [dict(r) for r in rows]
+    }
+
+def execute_re_lab_get_analysis(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    target = params.get("sample_id_or_hash", "")
+    row = db.execute("SELECT * FROM re_lab_analyses WHERE id=? OR sha256_hash=? LIMIT 1", (target, target)).fetchone()
+    if not row:
+        return {"status": "ERROR", "message": f"Sample '{target}' not found in Reverse Engineering Lab"}
+    d = dict(row)
+    return {
+        "status": "SUCCESS",
+        "sample": {
+            "id": d["id"],
+            "filename": d["filename"],
+            "sha256": d["sha256_hash"],
+            "file_type": d["file_type"],
+            "severity": d["severity"],
+            "verdict": d["verdict"],
+            "ai_explanation_en": d.get("ai_explanation_en"),
+            "ai_explanation_hinglish": d.get("ai_explanation_hinglish")
+        }
+    }
+
+def execute_rea_get_status(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    st = check_rea_status()
+    return {
+        "status": "SUCCESS",
+        "rea_status": st
+    }
+
+def execute_rea_inspect_target(db: sqlite3.Connection, params: Dict[str, Any], user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    target_path = params.get("target_path", "desktop")
+    workflow = params.get("workflow", "auto")
+    if workflow == "auto":
+        workflow = None
+
+    val = validate_rea_target(target_path)
+    if not val.get("valid"):
+        return {
+            "status": "DENIED",
+            "error": val.get("error", "Target authorization failed"),
+            "safety_posture": "ACCESS_BLOCKED"
+        }
+
+    resolved_target = Path(val["resolved_path"])
+    investigation = analyze_target_with_rea(resolved_target, workflow=workflow)
+    briefing = generate_amoja_rea_explanation(investigation)
+    investigation["amoja_briefing"] = briefing
+
+    # Persist in re_lab_analyses
+    now = now_iso()
+    sha256 = investigation["hashes"].get("sha256", "")
+    sha1 = investigation["hashes"].get("sha1", "")
+    md5 = investigation["hashes"].get("md5", "")
+
+    db.execute("""
+        INSERT OR REPLACE INTO re_lab_analyses (
+            id, filename, file_size, sha256_hash, sha1_hash, md5_hash,
+            file_type, mime_type, entropy, analysis_mode, severity, verdict,
+            confidence, summary, indicators_json, metadata_json, strings_sample_json,
+            yara_matches_json, source_analysis_json, ghidra_analysis_json,
+            dynamic_sandbox_json, ai_explanation_en, ai_explanation_hinglish,
+            report_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        investigation["analysis_id"],
+        investigation["filename"],
+        investigation["file_size"],
+        sha256, sha1, md5,
+        f"REA:{investigation['workflow']}",
+        "application/octet-stream",
+        0.0,
+        f"REA_LAB:{investigation['workflow']}",
+        "LOW" if investigation["success"] else "INFO",
+        "ANALYZED" if investigation["success"] else "LIMITED",
+        0.98 if investigation["success"] else 0.50,
+        investigation["summary"],
+        json.dumps(investigation.get("limitations", [])),
+        json.dumps({"workflow": investigation["workflow"], "confidence": investigation["confidence"]}),
+        json.dumps([]),
+        json.dumps([]),
+        json.dumps(investigation.get("evidence", {})),
+        json.dumps({}),
+        json.dumps({"mode": "STATIC_ONLY", "host_exec_blocked": True}),
+        briefing["english_briefing"],
+        briefing["hinglish_briefing"],
+        json.dumps(investigation),
+        now
+    ))
+
+    # Chained audit entry
+    record_audit_entry(
+        db,
+        actor=user.get("username", "security_analyst") if user else "security_analyst",
+        action="REA_LAB_TARGET_INSPECTED",
+        resource=f"rea_target:{investigation['filename']}",
+        details={
+            "analysis_id": investigation["analysis_id"],
+            "target_path": str(resolved_target),
+            "workflow": investigation["workflow"],
+            "success": investigation["success"],
+            "sha256": sha256
+        }
+    )
+
+    return {
+        "status": "SUCCESS" if investigation["success"] else "LIMITED",
+        "analysis_id": investigation["analysis_id"],
+        "filename": investigation["filename"],
+        "workflow": investigation["workflow"],
+        "sha256": sha256,
+        "summary": investigation["summary"],
+        "confidence": investigation["confidence"],
+        "observed_facts": briefing.get("observed_facts", []),
+        "inferred_risks": briefing.get("inferred_risks", []),
+        "limitations": briefing.get("limitations", []),
+        "english_briefing": briefing.get("english_briefing", ""),
+        "hinglish_briefing": briefing.get("hinglish_briefing", "")
+    }
+
+def execute_rea_generate_report(db: sqlite3.Connection, params: Dict[str, Any]) -> Dict[str, Any]:
+    analysis_id = params.get("analysis_id", "")
+    row = db.execute("SELECT * FROM re_lab_analyses WHERE id=? OR sha256_hash=? LIMIT 1", (analysis_id, analysis_id)).fetchone()
+    if not row:
+        return {"status": "ERROR", "message": f"Investigation '{analysis_id}' not found."}
+    record = dict(row)
+    try:
+        report_data = json.loads(record.get("report_json", "{}"))
+    except Exception:
+        report_data = {}
+
+    inv = {
+        "analysis_id": record["id"],
+        "filename": record["filename"],
+        "workflow": report_data.get("workflow", record.get("file_type", "").replace("REA:", "")),
+        "file_size": record["file_size"],
+        "hashes": {
+            "sha256": record["sha256_hash"],
+            "sha1": record["sha1_hash"],
+            "md5": record["md5_hash"]
+        },
+        "success": (record["verdict"] == "ANALYZED"),
+        "limitations": json.loads(record.get("indicators_json", "[]")),
+        "raw_result": json.loads(record.get("source_analysis_json", "{}")),
+        "summary": record.get("summary", "")
+    }
+    report = generate_rea_forensic_report(inv)
+    return {
+        "status": "SUCCESS",
+        "report": report
+    }
+
 # Mapping of tool names to their execution functions
 TOOL_HANDLERS: Dict[str, Any] = {
     "get_security_dashboard_metrics": execute_get_security_dashboard_metrics,
@@ -1516,7 +1719,12 @@ TOOL_HANDLERS: Dict[str, Any] = {
     "search_cybersecurity_intelligence": execute_search_cybersecurity_intelligence,
     "search_live_news_and_tech": execute_search_live_news_and_tech,
     "perform_live_web_research": execute_perform_live_web_research,
-    "check_windows_software_updates": execute_check_windows_software_updates
+    "check_windows_software_updates": execute_check_windows_software_updates,
+    "re_lab_list_samples": execute_re_lab_list_samples,
+    "re_lab_get_analysis": execute_re_lab_get_analysis,
+    "rea_get_status": execute_rea_get_status,
+    "rea_inspect_target": execute_rea_inspect_target,
+    "rea_generate_report": execute_rea_generate_report
 }
 
 def dispatch_tool(tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:

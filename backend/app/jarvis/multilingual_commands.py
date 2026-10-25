@@ -134,6 +134,56 @@ def parse_multilingual_intent(
     ]):
         return "get_alerts_and_incidents", {"severity": "CRITICAL", "limit": 10}, "Incidents & Alerts", lang
 
+    # REA Engine Operational Status
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "rea status", "check rea status", "rea engine status", "rea version", "rea providers",
+        "rea chi sthiti sanga", "rea engine chi sthiti", "आरईए स्थिती सांगा",
+        "rea status batao", "rea engine status check karo", "आरईए स्टेटस बताओ"
+    ]):
+        return "rea_get_status", {}, "Reverse Engineering", lang
+
+    # REA Generate Forensic Report
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "generate rea report", "generate forensic report", "rea forensic report", "create forensic report",
+        "forensic report dakhva", "forensic report tayar kara", "फॉरेन्सिक रिपोर्ट तयार करा",
+        "forensic report banao", "forensic report generate karo", "फॉरेन्सिक रिपोर्ट बनाओ"
+    ]):
+        # Extract target analysis ID if mentioned, or default to desktop/last
+        return "rea_generate_report", {"analysis_id": "desktop"}, "Reverse Engineering", lang
+
+    # REA Specific Target Inspection (e.g. desktop Electron app or authorized artifacts)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        # English
+        "inspect desktop app with rea", "analyze desktop with rea", "analyze desktop using rea",
+        "reverse engineer desktop", "reverse engineer electron app", "inspect electron app",
+        "rea inspect desktop", "run rea on desktop", "rea inspect",
+        # Marathi
+        "rea se desktop app inspect kara", "desktop app reverse engineer kara",
+        "डेस्कटॉप ॲप इन्स्पेक्ट करा", "इलेक्ट्रॉन ॲप रिव्हर्स इंजिनिअर करा",
+        # Hindi / Hinglish
+        "rea se desktop app inspect karo", "desktop app ka analysis karo rea se",
+        "desktop app reverse engineer karo", "डेस्कटॉप ऐप इंस्पेक्ट करो", "आरईए से डेस्कटॉप ऐप चेक करो"
+    ]):
+        # Target determination
+        target_path = "desktop"
+        if "frontend" in p:
+            target_path = "frontend/src"
+        elif "database" in p or "db" in p or "sqlite" in p:
+            target_path = "backend/data/agentshield.db"
+        return "rea_inspect_target", {"target_path": target_path, "workflow": "auto"}, "Reverse Engineering", lang
+
+    # Reverse Engineering Lab / Binary Analysis / Forensics (General)
+    if any(phrase in p or phrase in p_norm for phrase in [
+        "reverse engineering", "reverse engineering lab", "re lab", "malware analysis",
+        "binary analysis", "file forensics", "decompile", "ghidra", "yara scan",
+        "open reverse engineering", "analyze sample", "file hash", "static strings",
+        "reverse engineering dakhav", "reverse engineering lab dakhva", "malware analysis kara",
+        "रिव्हर्स इंजिनिअरिंग लॅब दाखवा", "रिव्हर्स इंजिनिअरिंग", "मालवेअर विश्लेषण",
+        "reverse engineering lab dikhao", "reverse engineering kholo", "sample analyze karo",
+        "malware analysis dikhao", "रिवर्स इंजीनियरिंग लैब दिखाओ", "रिवर्स इंजीनियरिंग", "फाइल एनालिसिस"
+    ]):
+        return "re_lab_list_samples", {}, "Reverse Engineering", lang
+
     # 4. Highest-Risk Agent
     if any(phrase in p or phrase in p_norm for phrase in [
         # English

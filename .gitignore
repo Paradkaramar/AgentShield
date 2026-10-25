@@ -19,6 +19,8 @@
 *.sqlite3
 backend/agentshield.db
 agentshield.db
+backend/data/*
+!backend/data/re_lab_vault/.gitkeep
 
 # Python bytecode, virtual environments & test caches
 __pycache__/

@@ -220,6 +220,9 @@ export type JarvisMessage = {
   personality_mode?: "friendly" | "security";
   citations?: Array<{ title?: string; publisher?: string; publication_date?: string; url: string; snippet?: string }>;
   live_intelligence?: { tool?: string; retrieved_at?: string; cached?: boolean; stale?: boolean; status?: string };
+  ai_mode?: "local" | "online" | "auto";
+  model_used?: string;
+  provider_used?: string;
 };
 
 export interface LiveWeatherResult {
@@ -332,6 +335,7 @@ export type JarvisPreferences = {
   push_to_talk_mode?: boolean;
   mic_muted?: boolean;
   personality_mode?: "friendly" | "security";
+  ai_mode?: "local" | "online" | "auto";
 };
 
 export type JarvisVoiceEngineInfo = {
@@ -751,5 +755,535 @@ export interface JarvisSystemStatus {
   approved_apps: string[];
   security_safeguards: Record<string, boolean>;
 }
+
+export interface ReLabIndicator {
+  api: string;
+  category: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
+  mitre_technique: string;
+  description: string;
+}
+
+export interface ReLabSection {
+  name: string;
+  virtual_size: number;
+  virtual_address: string;
+  raw_size: number;
+  entropy: number;
+  is_packed: boolean;
+}
+
+export interface ReLabAnalysis {
+  id: string;
+  filename: string;
+  file_size: number;
+  size_formatted?: string;
+  sha256_hash: string;
+  sha1_hash: string;
+  md5_hash: string;
+  file_type: string;
+  mime_type?: string;
+  entropy: number;
+  is_packed: boolean;
+  analysis_mode: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "BENIGN";
+  verdict: string;
+  confidence: number;
+  summary: string;
+  indicators: ReLabIndicator[];
+  yara_matches: Array<{
+    rule_id: string;
+    rule_name: string;
+    description: string;
+    severity: string;
+  }>;
+  yara_engine_status?: string;
+  strings_summary?: {
+    total_extracted: number;
+    sample_strings: string[];
+    urls: string[];
+    ips: string[];
+    paths: string[];
+    reg_keys: string[];
+  };
+  pe_metadata?: {
+    is_valid_pe?: boolean;
+    machine?: string;
+    architecture?: string;
+    subsystem?: string;
+    compile_timestamp?: string;
+    entry_point?: string;
+    sections_count?: number;
+    sections?: ReLabSection[];
+    packed_sections_detected?: number;
+    suspected_packing?: boolean;
+  };
+  elf_metadata?: {
+    is_valid_elf?: boolean;
+    bitness?: string;
+    endianness?: string;
+    os_abi?: string;
+    file_type?: string;
+    machine?: string;
+    entry_point?: string;
+  };
+  source_analysis?: {
+    language_evaluated?: string;
+    total_security_findings?: number;
+    findings?: Array<{
+      type: string;
+      line?: number;
+      severity: string;
+      code_snippet: string;
+      remediation: string;
+    }>;
+    redacted_secret_instances?: number;
+    high_entropy_payload_blobs?: number;
+    is_suspicious_script?: boolean;
+  };
+  ghidra_status?: {
+    installed: boolean;
+    status: string;
+    detail: string;
+    setup_guide?: string;
+  };
+  sandbox_status?: {
+    host_execution: string;
+    sandbox_isolation: string;
+    default_mode: string;
+    disclaimer: string;
+  };
+  ai_explanation_en?: string;
+  ai_explanation_hinglish?: string;
+  report?: any;
+  created_at: string;
+}
+
+export interface ReLabToolsStatus {
+  ghidra: {
+    installed: boolean;
+    status: string;
+    ghidra_home?: string;
+    detail: string;
+    setup_guide?: string;
+  };
+  yara: {
+    native_installed: boolean;
+    engine: string;
+    status: string;
+    detail: string;
+  };
+  sandbox: {
+    host_execution: string;
+    sandbox_isolation: string;
+    default_mode: string;
+    disclaimer: string;
+  };
+}
+
+// =============================================================================
+// REA (REVERSE ENGINEER ANYTHING) TYPES
+// =============================================================================
+
+export interface ReaStatus {
+  installed: boolean;
+  version: string;
+  node_version: string;
+  node_path: string;
+  command_path: string;
+  providers: Array<{
+    id: string;
+    name: string;
+    version?: string | null;
+    status: string;
+    code?: string | null;
+    reason?: string | null;
+    selected?: boolean;
+  }>;
+  capabilities: {
+    javascript_electron: boolean;
+    dotnet_assemblies: boolean;
+    sqlite_snapshots: boolean;
+    model_artifacts: boolean;
+    go_binaries: boolean;
+    wasm_artifacts: boolean;
+    native_disassembly: boolean;
+  };
+  supported_workflows: string[];
+  zero_trust_status: string;
+  sandbox_policy: string;
+}
+
+export interface ReaInvestigation {
+  analysis_id: string;
+  success: boolean;
+  workflow: string;
+  target_path: string;
+  filename: string;
+  file_size: number;
+  hashes: {
+    sha256: string;
+    sha1: string;
+    md5: string;
+    size_bytes: number;
+  };
+  exit_code: number;
+  summary: string;
+  confidence: string;
+  limitations: string[];
+  evidence: any;
+  stderr_diagnostics?: string;
+  raw_result: any;
+  amoja_briefing?: {
+    analysis_id: string;
+    filename: string;
+    workflow: string;
+    observed_facts: string[];
+    inferred_risks: string[];
+    limitations: string[];
+    english_briefing: string;
+    hinglish_briefing: string;
+    custom_answer?: string | null;
+    language_served: string;
+  };
+}
+
+export interface ReaAuthorizedTarget {
+  id: string;
+  name: string;
+  kind: string;
+  format: string;
+  path: string;
+  absolute_path: string;
+  recommended_workflow: string;
+  is_harmless_test_app: boolean;
+  description: string;
+  safety_posture: string;
+  permission_required: string;
+}
+
+export interface ReaTargetValidation {
+  valid: boolean;
+  status: "AUTHORIZED" | "DENIED" | "NOT_FOUND";
+  target_path: string;
+  resolved_path: string;
+  is_directory?: boolean;
+  filename?: string;
+  file_size?: number;
+  recommended_workflow?: string;
+  supported_workflows?: string[];
+  safety_posture?: string;
+  isolation?: string;
+  permission_granted?: boolean;
+  error?: string;
+  code?: string;
+}
+
+export interface ReaForensicReport {
+  report_id: string;
+  analysis_id: string;
+  filename: string;
+  workflow: string;
+  created_at: string;
+  sha256: string;
+  verdict: "COMPLETED" | "LIMITED";
+  markdown_report: string;
+  structured_data: {
+    summary: string;
+    observed_facts: string[];
+    inferred_risks: string[];
+    limitations: string[];
+    hashes: Record<string, string>;
+    exit_code: number;
+  };
+}
+
+export interface AIChatRequestPayload {
+  message: string;
+  session_id?: string;
+  mode?: "local" | "online" | "auto";
+  provider?: "auto" | "local" | "gemini" | "openai" | "anthropic" | "heuristic";
+  model?: string;
+  system_prompt?: string;
+  temperature?: number;
+  max_tokens?: number;
+  language?: string;
+  conversation_history?: Array<{ role: string; content: string }>;
+}
+
+export interface AIChatResponsePayload {
+  response: string;
+  speech_text?: string;
+  provider_used: string;
+  model_used: string;
+  ai_mode_used?: "local" | "online" | "auto" | string;
+  is_local: boolean;
+  fallback_occurred: boolean;
+  fallback_reason?: string;
+  execution_time_ms: number;
+  session_id?: string;
+  language_detected: string;
+  created_at: string;
+}
+
+export interface AIHealthResponsePayload {
+  status: "HEALTHY" | "DEGRADED" | "OFFLINE";
+  local_runtime: {
+    online: boolean;
+    base_url: string;
+    default_model: string;
+    model_installed: boolean;
+    installed_models: string[];
+    models_count: number;
+    error?: string | null;
+  };
+  cloud_providers: {
+    gemini?: { configured: boolean; model: string };
+    openai?: { configured: boolean; model: string };
+    anthropic?: { configured: boolean; model: string };
+  };
+  active_default_provider: string;
+  storage: {
+    c_drive: { free_gb: number; total_gb: number; percent_used: number };
+    e_drive?: { free_gb: number; total_gb: number; percent_used: number } | null;
+    models_dir: string;
+  };
+  timestamp: string;
+}
+
+export interface AIProvidersResponsePayload {
+  default_provider: string;
+  configured_providers: Array<{
+    id: string;
+    name: string;
+    type: string;
+    model?: string;
+    endpoint?: string;
+    configured?: boolean;
+    is_offline?: boolean;
+    description: string;
+  }>;
+}
+
+export interface AIInferenceTestResultPayload {
+  model_type: "local" | "online";
+  provider: string;
+  model: string;
+  status: "PASS" | "FAIL";
+  latency_ms: number;
+  test_prompt: string;
+  response?: string | null;
+  error?: string | null;
+  tested_at: string;
+}
+
+export interface AIDualModelStatusPayload {
+  current_mode: "local" | "online" | "auto";
+  local_model: {
+    name: string;
+    runtime: string;
+    endpoint: string;
+    online: boolean;
+    model_installed: boolean;
+    installed_models: string[];
+    last_test?: AIInferenceTestResultPayload | null;
+    status: string;
+  };
+  online_model: {
+    provider: string;
+    model: string;
+    configured: boolean;
+    last_test?: AIInferenceTestResultPayload | null;
+    status: string;
+  };
+  storage: {
+    c_drive: { free_gb: number; total_gb: number; percent_used: number };
+    e_drive?: { free_gb: number; total_gb: number; percent_used: number } | null;
+    models_dir: string;
+  };
+  active_in_ui: string;
+  both_working: boolean;
+  timestamp: string;
+}
+
+// ============================================================================
+// 3D CYBER NETWORK GLOBE & TARGETED SCANNER TYPES
+// ============================================================================
+
+export interface GlobeNode {
+  id: string;
+  ip_address: string;
+  hostname: string;
+  mac_address?: string | null;
+  status: string;
+  in_baseline: boolean;
+  first_seen?: string;
+  last_seen?: string;
+  latency_ms?: number;
+  is_private: boolean;
+  geolocated: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  city?: string;
+  country?: string;
+  country_code?: string;
+  isp?: string;
+  location_confidence: string;
+  display_location: string;
+  open_ports: Array<{
+    port: number;
+    protocol: string;
+    service_name: string;
+    state?: string;
+    banner?: string;
+  }>;
+  open_ports_count: number;
+  alerts: Array<{
+    id: number;
+    severity: string;
+    title: string;
+    observed_fact: string;
+    suspected_threat: string;
+    created_at?: string;
+  }>;
+  indicator: "ONLINE_HEALTHY" | "ALERT_WARNING" | "ALERT_CRITICAL" | "OFFLINE";
+  marker_color: string;
+  size: number;
+  virtual_role?: "GATEWAY" | "SERVER" | "WORKSTATION" | "IOT_DEVICE";
+  virtual_x?: number;
+  virtual_y?: number;
+}
+
+export interface GlobeArc {
+  id: string;
+  source_ip: string;
+  target_ip: string;
+  start_lat: number;
+  start_lng: number;
+  end_lat: number;
+  end_lng: number;
+  protocol: string;
+  port: number;
+  color: string;
+  stroke: number;
+  dash_length: number;
+  dash_gap: number;
+  dash_speed: number;
+  telemetry_source: string;
+  packets_observed?: number;
+  bytes_transferred?: number;
+}
+
+export interface GlobeTelemetryResponse {
+  status: string;
+  mode: "live" | "demo";
+  is_demo_mode: boolean;
+  simulation_banner?: string;
+  timestamp: string;
+  nmap_installed: boolean;
+  tshark_installed: boolean;
+  summary: {
+    total_hosts: number;
+    online_hosts: number;
+    offline_hosts: number;
+    public_hosts_count: number;
+    private_lan_hosts_count: number;
+    total_open_ports: number;
+    unbaselined_discrepancies: number;
+    active_alerts_count: number;
+  };
+  globe_nodes: GlobeNode[];
+  virtual_lan_nodes: GlobeNode[];
+  connection_arcs: GlobeArc[];
+  recent_alerts: any[];
+  recent_jobs: any[];
+}
+
+export interface GlobeScanStatus {
+  tool_status: {
+    nmap_installed: boolean;
+    nmap_path?: string | null;
+    nmap_version?: string | null;
+    supported_profiles: string[];
+    native_engine_ready: boolean;
+  };
+  active_scan: {
+    is_scanning: boolean;
+    job_id?: string | null;
+    target?: string | null;
+    profile?: string | null;
+    started_at?: string | null;
+    progress_pct: number;
+    status_message: string;
+    discovered_hosts_count: number;
+    tool_used: string;
+    error?: string | null;
+    supported_profiles: Array<{
+      id: string;
+      name: string;
+      description: string;
+      ports_count: number;
+    }>;
+  };
+}
+
+export interface DeviceDetailResponse {
+  device: GlobeNode & {
+    geolocation: {
+      is_private: boolean;
+      geolocated: boolean;
+      city?: string;
+      region?: string;
+      country?: string;
+      isp?: string;
+      location_confidence: string;
+      display_location: string;
+      note?: string;
+    };
+    relevant_findings: Array<{
+      severity: string;
+      title: string;
+      detail: string;
+      recommendation: string;
+    }>;
+  };
+}
+
+export interface AIHostExplanation {
+  analyst_verdict: "ALLOW" | "BLOCK" | "ASK_HUMAN";
+  risk_score: number;
+  confidence_level: "HIGH" | "MEDIUM" | "LOW";
+  summary: string;
+  evidence_chain: string[];
+  contributing_factors: string[];
+  recommended_defensive_actions: string[];
+  uncertainty_label: string;
+  target_ip: string;
+  hostname: string;
+  is_private: boolean;
+  location_confidence: string;
+  actual_observed_ports: string[];
+  verified_evidence_statement: string;
+}
+
+export interface TrafficStreamResponse {
+  packets: Array<{
+    timestamp: string;
+    src: string;
+    dst: string;
+    src_port?: number;
+    dst_port?: number;
+    protocol: string;
+    length: number;
+    info: string;
+  }>;
+  metrics: {
+    tcp_stream_rate: string;
+    udp_stream_rate: string;
+    active_connections: number;
+    tshark_installed: boolean;
+  };
+}
+
 
 

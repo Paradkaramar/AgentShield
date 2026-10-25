@@ -4,7 +4,7 @@ import {
   AlertTriangle, Eye, Lock, Crosshair, Network, GitFork,
   Cpu, FileCode, History, Database, FileText, KeyRound,
   TrendingUp, Activity, Terminal, Settings as SettingsIcon,
-  Compass, Zap, Wifi, Flame, Laptop
+  Compass, Zap, Wifi, Flame, Laptop, Globe as GlobeIcon
 } from "lucide-react";
 
 interface Props {
@@ -28,10 +28,11 @@ export const Sidebar: React.FC<Props> = ({
       items: [
         { name: "Overview", icon: LayoutDashboard },
         { name: "Device Security", icon: Laptop },
-        { name: "JARVIS Assistant", icon: Cpu, isJarvis: true },
+        { name: "AMOJA AI Assistant", icon: Cpu, isJarvis: true },
         { name: "Real-Time Monitor", icon: Activity },
         { name: "Three-Layer Firewall", icon: Flame },
         { name: "Network Monitoring", icon: Wifi },
+        { name: "Cyber Network Globe", icon: GlobeIcon, isGlobe: true },
         { name: "Agents", icon: Bot },
         { name: "Agent Lab", icon: Radio },
         { name: "Approvals", icon: CheckCircle2, count: pendingApprovals },
@@ -84,7 +85,7 @@ export const Sidebar: React.FC<Props> = ({
           <ShieldCheck size={22} />
         </div>
         <div>
-          <strong>AgentShield</strong>
+          <strong>AMOJA AI // AgentShield</strong>
           <small className="tagline">"Who Controls the AI?"</small>
         </div>
       </div>
@@ -112,6 +113,9 @@ export const Sidebar: React.FC<Props> = ({
                     <span>{item.name}</span>
                     {(item as any).isJarvis && (
                       <span className="jarvis-nav-badge">AI HUD</span>
+                    )}
+                    {(item as any).isGlobe && (
+                      <span className="badge-3d-hud">3D HUD</span>
                     )}
                     {item.count !== undefined && item.count > 0 && (
                       <em className="nav-counter">{item.count}</em>
