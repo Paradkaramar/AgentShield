@@ -26,5 +26,9 @@ contextBridge.exposeInMainWorld('agentShieldDesktop', {
 
   // Native microphone access check and request
   checkMicrophonePermission: () => ipcRenderer.invoke('check-microphone-permission'),
-  requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission')
+  requestMicrophonePermission: () => ipcRenderer.invoke('request-microphone-permission'),
+
+  // Backend & Local AI health monitors
+  checkBackendHealth: () => ipcRenderer.invoke('get-backend-status'),
+  checkOllamaHealth: () => ipcRenderer.invoke('get-ollama-status')
 });

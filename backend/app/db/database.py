@@ -988,7 +988,7 @@ rules:
                 (
                     json.dumps([21, 22, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 6379, 8000, 8080]),
                     now,
-                    (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(),
+                    (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat(),
                     now
                 )
             )

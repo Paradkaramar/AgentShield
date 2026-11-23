@@ -388,6 +388,20 @@ def analyze_target_with_rea(
         cmd_args.extend(["--table", str(opts["table"])])
         if "row_limit" in opts:
             cmd_args.extend(["--row-limit", str(opts["row_limit"])])
+    elif selected_workflow == "analyze-javascript-application":
+        if "source_paths" in opts and isinstance(opts["source_paths"], list):
+            for sp in opts["source_paths"]:
+                cmd_args.extend(["--source-path", str(sp)])
+        elif target_path.is_dir() and (target_path / "node_modules").exists():
+            # If vendored node_modules is present, scope static analysis to application sources
+            # to prevent unbounded AST scanning across hundreds of third-party node_modules packages
+            top_level_sources = [
+                f.name for f in target_path.glob("*.js") if f.is_file()
+            ] + [
+                f.name for f in target_path.glob("*.ts") if f.is_file()
+            ]
+            for sp in sorted(top_level_sources):
+                cmd_args.extend(["--source-path", sp])
 
     code, rea_result, stderr_diag = run_rea_command(cmd_args, timeout_sec=DEFAULT_TIMEOUT_SECONDS)
 

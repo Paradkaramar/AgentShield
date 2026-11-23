@@ -80,8 +80,20 @@ app.include_router(rea_routes.router)
 app.include_router(ai_routes.router)
 app.include_router(globe_routes.router)
 
-@app.get("/health", tags=["Health & Status"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["Health & Status"])
+def root_endpoint():
+    """Root endpoint: lightweight health confirmation for load balancers, scanners, and monitors."""
+    return {
+        "status": "ok",
+        "service": "AgentShield AI Agent Security Control Plane",
+        "version": "1.0.0",
+        "tagline": "Who Controls the AI?",
+        "zero_trust": "ENFORCING"
+    }
+
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health & Status"])
 def health_check():
+    """Lightweight zero-dependency health check that never initiates background scans."""
     return {
         "status": "ok",
         "service": "AgentShield AI Agent Security Control Plane",

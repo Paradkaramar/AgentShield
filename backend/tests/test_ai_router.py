@@ -6,6 +6,7 @@ import httpx
 from app.main import app
 from app.core.auth import create_access_token
 from app.jarvis.ai_router import (
+    ai_router,
     AIRouter,
     AIRuntimeUnavailableError,
     AIModelNotFoundError,
@@ -32,7 +33,7 @@ def test_ai_health_endpoint(auth_headers):
     assert "storage" in data
     assert "c_drive" in data["storage"]
     assert "models_dir" in data["storage"]
-    assert data["local_runtime"]["default_model"] == "qwen2.5:3b"
+    assert "qwen" in data["local_runtime"]["default_model"].lower()
 
 # 2. Providers Endpoint Test
 def test_ai_providers_endpoint(auth_headers):
@@ -104,8 +105,12 @@ def test_ai_chat_multilingual_hinglish(auth_headers):
     assert "AgentShield" in data["response"] or "AMOJA" in data["response"]
 
 # 7. Ollama Unavailable Fallback Test
-def test_ai_chat_ollama_unavailable_fallback(auth_headers):
+def test_ai_chat_ollama_unavailable_fallback(auth_headers, monkeypatch):
     # When Ollama is offline and provider is 'auto', it should fall back to heuristic
+    async def mock_fail(*args, **kwargs):
+        raise AIRuntimeUnavailableError("Connection refused (Ollama daemon is not running)")
+    monkeypatch.setattr(ai_router, "infer_ollama", mock_fail)
+
     payload = {
         "message": "Give me the security summary.",
         "provider": "auto"

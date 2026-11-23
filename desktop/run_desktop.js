@@ -16,9 +16,12 @@ console.log('=======================================================');
 function tryLaunchElectron() {
   try {
     const electron = require('electron');
+    const childEnv = { ...process.env };
+    delete childEnv.ELECTRON_RUN_AS_NODE;
     const child = spawn(electron, [path.join(__dirname, 'main.js')], {
       stdio: 'inherit',
-      windowsHide: false
+      windowsHide: false,
+      env: childEnv
     });
     child.on('close', (code) => {
       console.log(`AMOJA AI desktop exited with code ${code}`);

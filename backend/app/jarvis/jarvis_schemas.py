@@ -222,6 +222,7 @@ class AIChatRequest(BaseModel):
     max_tokens: Optional[int] = Field(default=1024, ge=1, le=4096)
     language: Optional[str] = Field(default="auto", description="Response language: auto, en, hi, mr, hinglish")
     conversation_history: Optional[List[Dict[str, str]]] = Field(default=None, description="Past turns [{'role': 'user', 'content': '...'}]")
+    allow_fallback: Optional[bool] = Field(default=None, description="Explicit consent to allow fallback to cloud providers if local model fails. Defaults to AI_AUTO_FALLBACK.")
 
 class AIChatResponse(BaseModel):
     response: str

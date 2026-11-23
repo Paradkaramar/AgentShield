@@ -1008,7 +1008,29 @@ export interface AIChatRequestPayload {
   temperature?: number;
   max_tokens?: number;
   language?: string;
+  allow_fallback?: boolean;
   conversation_history?: Array<{ role: string; content: string }>;
+}
+
+export interface OllamaHealthPayload {
+  reachable: boolean;
+  base_url: string;
+  target_model: string;
+  model_installed: boolean;
+  installed_models: string[];
+  active_loaded_model?: string | null;
+  gpu_offload?: string | null;
+  latency_ms: number;
+  error?: string | null;
+}
+
+export interface AIStreamChunkPayload {
+  token?: string;
+  done?: boolean;
+  error?: string;
+  blocked?: boolean;
+  model?: string;
+  total_duration_ms?: number;
 }
 
 export interface AIChatResponsePayload {
@@ -1285,5 +1307,43 @@ export interface TrafficStreamResponse {
   };
 }
 
+export type GlobalThreatMode = "local" | "global" | "combined";
 
+export interface GlobalThreatIntelStatus {
+  provider: string;
+  reference_url: string;
+  supported_integration_method: string;
+  official_public_api_available: boolean;
+  official_embed_code_available: boolean;
+  data_scope: string;
+  local_data_isolation: string;
+  data_leakage_risk: string;
+  embedding_technical_notes: string;
+}
 
+export interface GlobalThreatIntelExplanation {
+  title: string;
+  status: string;
+  timestamp: string;
+  global_threat_intel: {
+    source: string;
+    feed_type: string;
+    data_interface_status: string;
+    typical_attack_vectors: string[];
+    threat_landscape_summary: string;
+  };
+  local_network_findings: {
+    source: string;
+    discovered_hosts_count: number;
+    active_alerts_count: number;
+    top_exposed_ports: string[];
+    telemetry_egress_policy: string;
+  };
+  comparative_analysis: {
+    data_merging_policy: string;
+    key_distinction: string;
+    posture_recommendation: string;
+  };
+  spoken_briefing: string;
+  privacy_guarantee: string;
+}

@@ -231,23 +231,28 @@ class AppFirewallMiddleware(BaseHTTPMiddleware):
         method = request.method
         request_id = f"waf-{uuid.uuid4().hex[:12]}"
 
+        # Specialized endpoints (reverse engineering, forensics, audit archives) process large ASTs/dossiers
+        effective_max_body = max_body_bytes
+        if path.startswith(("/api/rea/", "/api/forensics/", "/api/reverse-engineering/")):
+            effective_max_body = max(max_body_bytes, 35 * 1024 * 1024)
+
         # 2. Check Content-Length size watchdog
         content_length_header = request.headers.get("content-length")
         if content_length_header:
             try:
                 content_len = int(content_length_header)
-                if content_len > max_body_bytes:
+                if content_len > effective_max_body:
                     self._record_waf_event(
                         client_ip=client_ip, method=method, path=path,
                         category="PAYLOAD_TOO_LARGE",
                         action="BLOCKED",
-                        matched=f"Content-Length {content_len} exceeds limit of {max_body_bytes} bytes",
+                        matched=f"Content-Length {content_len} exceeds limit of {effective_max_body} bytes",
                         request_id=request_id,
-                        details={"content_length": content_len, "limit": max_body_bytes}
+                        details={"content_length": content_len, "limit": effective_max_body}
                     )
                     return JSONResponse(
                         status_code=413,
-                        content={"error": "Payload Too Large", "message": f"Request size exceeds WAF limit of {max_body_bytes // 1024 // 1024}MB.", "request_id": request_id}
+                        content={"error": "Payload Too Large", "message": f"Request size exceeds WAF limit of {effective_max_body // 1024 // 1024}MB.", "request_id": request_id}
                     )
             except ValueError:
                 pass
@@ -255,7 +260,7 @@ class AppFirewallMiddleware(BaseHTTPMiddleware):
         # 3. Check Per-IP Rate Limiting
         # Bypass rate limit for static assets, health probes, or local loopback/testclient requests from SOC frontend
         is_loopback = client_ip in ("testclient", "127.0.0.1", "::1", "localhost", "0.0.0.0")
-        if not path.startswith(("/assets", "/favicon.ico", "/health")) and not is_loopback:
+        if path not in ("/", "/health") and not path.startswith(("/assets", "/favicon.ico", "/health")) and not is_loopback:
             allowed, current_count, retry_after = waf_rate_limiter.is_allowed(client_ip)
             if not allowed:
                 self._record_waf_event(

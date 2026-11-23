@@ -78,6 +78,17 @@ export const JarvisPage: React.FC<Props> = ({
   const [aiMode, setAiMode] = useState<"local" | "online" | "auto">("auto");
   const [dualModelStatus, setDualModelStatus] = useState<AIDualModelStatusPayload | null>(null);
   const isTurnInFlightRef = React.useRef(false);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
+    isTurnInFlightRef.current = false;
+    setJarvisState("IDLE");
+  };
 
   const loadDualModelStatus = (modeToQuery?: "local" | "online" | "auto") => {
     getDualModelStatus(modeToQuery || aiMode)
@@ -243,12 +254,16 @@ export const JarvisPage: React.FC<Props> = ({
       setMessages(prev => [...prev, userMsg]);
 
       const effectiveAiMode = aiModeParam || aiMode;
+      const ac = new AbortController();
+      abortControllerRef.current = ac;
+
       const res = await sendJarvisMessage(text, {
         sessionId,
         language: selectedLanguage,
         isVoice,
         personalityMode,
         aiMode: effectiveAiMode,
+        signal: ac.signal,
         context: {
           current_page: "JARVIS Assistant",
           selected_agent_id: selectedAgentId,
@@ -322,6 +337,7 @@ export const JarvisPage: React.FC<Props> = ({
       setErrorMessage(clearMsg);
       setTimeout(() => setJarvisState("IDLE"), 5000);
     } finally {
+      abortControllerRef.current = null;
       setIsProcessing(false);
       isTurnInFlightRef.current = false;
     }
@@ -894,6 +910,7 @@ export const JarvisPage: React.FC<Props> = ({
             onRetry={lastFailedQuery ? handleRetryLastMessage : undefined}
             isSpeaking={jarvisState === "SPEAKING"}
             onStopSpeaking={handleInterruptPlayback}
+            onStopGeneration={handleStopGeneration}
             aiMode={aiMode}
             onSelectAiMode={(m) => {
               setAiMode(m);

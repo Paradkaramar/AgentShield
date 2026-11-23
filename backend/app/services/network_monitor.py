@@ -29,37 +29,71 @@ class NetworkMonitoringService:
         self._scan_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._is_active = False
+        self._emergency_stop_cached = False
+        self._initial_delay_seconds = 30
 
     def is_service_active(self) -> bool:
         return self._is_active and (self._running_task is not None and not self._running_task.done())
 
     def start_background_service(self):
-        """Starts the persistent background monitoring scheduler loop."""
-        if self._running_task is None or self._running_task.done():
-            self._stop_event.clear()
-            self._is_active = True
-            self._running_task = asyncio.create_task(self._scheduler_loop(), name="network_monitor_scheduler")
-            logger.info("Continuous Network Monitoring Service started.")
+        """Starts the persistent background monitoring scheduler loop safely (idempotent)."""
+        if self._running_task is not None and not self._running_task.done():
+            logger.debug("Network monitoring scheduler is already running; skipping duplicate start.")
+            return
+
+        self._stop_event.clear()
+        self._is_active = True
+
+        # Decouple backend startup from overdue scans: advance overdue next_scan_at
+        try:
+            with connect() as db:
+                row = db.execute("SELECT emergency_stop, scan_interval_seconds, next_scan_at FROM network_monitoring_config LIMIT 1").fetchone()
+                if row:
+                    self._emergency_stop_cached = bool(row["emergency_stop"] == 1)
+                    scan_int = row["scan_interval_seconds"] or 60
+                    now_dt = datetime.now(timezone.utc)
+                    next_iso = row["next_scan_at"]
+                    is_overdue = True
+                    if next_iso:
+                        try:
+                            is_overdue = datetime.fromisoformat(next_iso) <= now_dt
+                        except Exception:
+                            is_overdue = True
+                    if is_overdue:
+                        safe_next = (now_dt + timedelta(seconds=max(60, scan_int))).isoformat()
+                        db.execute("UPDATE network_monitoring_config SET next_scan_at = ? WHERE id = 1", (safe_next,))
+        except Exception as e:
+            logger.debug(f"Initial network config sync note: {e}")
+
+        self._running_task = asyncio.create_task(self._scheduler_loop(), name="network_monitor_scheduler")
+        logger.info("Continuous Network Monitoring Service started.")
 
     async def stop_background_service(self):
-        """Stops the persistent background scheduler loop cleanly."""
+        """Stops the persistent background scheduler loop cleanly and cancels running scans."""
         self._is_active = False
         self._stop_event.set()
         if self._current_scan_task and not self._current_scan_task.done():
             self._current_scan_task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(self._current_scan_task), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                pass
+            self._current_scan_task = None
+
         if self._running_task and not self._running_task.done():
             self._running_task.cancel()
             try:
-                await self._running_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(asyncio.shield(self._running_task), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                 pass
-        self._running_task = None
+            self._running_task = None
         logger.info("Continuous Network Monitoring Service stopped.")
 
     def trigger_emergency_stop(self, actor: str = "admin", reason: str = "Operator manual emergency stop") -> Dict[str, Any]:
         """Global emergency stop: immediately cancels in-flight scan, updates DB flag,
         and records an immutable cryptographic audit record.
         """
+        self._emergency_stop_cached = True
         if self._current_scan_task and not self._current_scan_task.done():
             self._current_scan_task.cancel()
 
@@ -95,6 +129,7 @@ class NetworkMonitoringService:
 
     def reset_emergency_stop(self, actor: str = "admin") -> Dict[str, Any]:
         """Resets the global emergency stop flag, permitting scans to be scheduled again."""
+        self._emergency_stop_cached = False
         now = now_iso()
         with connect() as db:
             db.execute("""
@@ -254,27 +289,43 @@ class NetworkMonitoringService:
                     details={"target_hosts_count": len(target_ips), "scopes": approved_cidrs}
                 )
 
-            # 3. Execute scan with strict duration limits
+            # 3. Execute scan with bounded concurrency and strict duration limits
             semaphore = asyncio.Semaphore(concurrency)
             scan_results: List[Dict[str, Any]] = []
 
             def _check_emergency_stop() -> bool:
-                with connect() as check_db:
-                    row = check_db.execute("SELECT emergency_stop FROM network_monitoring_config LIMIT 1").fetchone()
-                    return bool(row and row[0] == 1)
+                # Fast in-memory check to avoid thousands of parallel SQLite queries
+                if self._emergency_stop_cached:
+                    return True
+                return False
 
             async def _run_sweep():
-                tasks = [
-                    probe_host(
-                        ip,
-                        target_ports=target_ports,
-                        timeout_seconds=timeout_sec,
-                        semaphore=semaphore,
-                        emergency_stop_check=_check_emergency_stop
-                    )
-                    for ip in target_ips
-                ]
-                return await asyncio.gather(*tasks)
+                results = []
+                # Chunk target IPs to avoid overflowing OS socket handles or choking the event loop
+                chunk_size = max(5, concurrency)
+                for i in range(0, len(target_ips), chunk_size):
+                    if _check_emergency_stop() or self._stop_event.is_set():
+                        raise EmergencyStopTriggered("Scan cancelled: Global emergency stop engaged")
+                    chunk = target_ips[i:i + chunk_size]
+                    tasks = [
+                        probe_host(
+                            ip,
+                            target_ports=target_ports,
+                            timeout_seconds=timeout_sec,
+                            semaphore=semaphore,
+                            emergency_stop_check=_check_emergency_stop
+                        )
+                        for ip in chunk
+                    ]
+                    chunk_res = await asyncio.gather(*tasks, return_exceptions=True)
+                    for r in chunk_res:
+                        if isinstance(r, Exception):
+                            if isinstance(r, (EmergencyStopTriggered, asyncio.CancelledError)):
+                                raise r
+                            logger.debug(f"Host probe error: {r}")
+                        elif r:
+                            results.append(r)
+                return results
 
             try:
                 self._current_scan_task = asyncio.create_task(_run_sweep())
@@ -282,45 +333,64 @@ class NetworkMonitoringService:
             except asyncio.TimeoutError:
                 err_msg = f"Scan duration exceeded limit of {duration_limit} seconds. Terminated safely."
                 logger.error(err_msg)
+                now_failed = now_iso()
+                next_scan_time = (datetime.now(timezone.utc) + timedelta(seconds=cfg.get("scan_interval_seconds", 60))).isoformat()
                 with connect() as db:
                     db.execute("""
                         UPDATE scan_jobs
                         SET status = 'FAILED', error_message = ?, completed_at = ?
                         WHERE id = ?
-                    """, (err_msg, now_iso(), job_id))
+                    """, (err_msg, now_failed, job_id))
+                    # Critical: Advance next_scan_at so it doesn't immediately re-trigger in a tight loop
+                    db.execute("""
+                        UPDATE network_monitoring_config
+                        SET last_scan_at = ?, next_scan_at = ?, updated_at = ?
+                    """, (now_failed, next_scan_time, now_failed))
                     record_audit_entry(
                         db,
                         actor=triggered_by,
                         action="NETWORK_SCAN_TIMEOUT_ERROR",
                         resource=f"scan_jobs:{job_id}",
-                        details={"error": err_msg}
+                        details={"error": err_msg, "next_scan_at": next_scan_time}
                     )
                 return {"status": "FAILED", "job_id": job_id, "error": err_msg}
             except (asyncio.CancelledError, EmergencyStopTriggered):
                 err_msg = "Scan cancelled immediately due to emergency stop or operator shutdown."
                 logger.warning(err_msg)
+                now_cancelled = now_iso()
+                next_scan_time = (datetime.now(timezone.utc) + timedelta(seconds=cfg.get("scan_interval_seconds", 60))).isoformat()
                 with connect() as db:
                     db.execute("""
                         UPDATE scan_jobs
                         SET status = 'CANCELLED', error_message = ?, completed_at = ?
                         WHERE id = ?
-                    """, (err_msg, now_iso(), job_id))
+                    """, (err_msg, now_cancelled, job_id))
+                    db.execute("""
+                        UPDATE network_monitoring_config
+                        SET last_scan_at = ?, next_scan_at = ?, updated_at = ?
+                    """, (now_cancelled, next_scan_time, now_cancelled))
                 return {"status": "CANCELLED", "job_id": job_id, "error": err_msg}
             except Exception as e:
                 err_msg = f"Unexpected scanner failure: {str(e)}"
                 logger.exception(err_msg)
+                now_failed = now_iso()
+                next_scan_time = (datetime.now(timezone.utc) + timedelta(seconds=cfg.get("scan_interval_seconds", 60))).isoformat()
                 with connect() as db:
                     db.execute("""
                         UPDATE scan_jobs
                         SET status = 'FAILED', error_message = ?, completed_at = ?
                         WHERE id = ?
-                    """, (err_msg, now_iso(), job_id))
+                    """, (err_msg, now_failed, job_id))
+                    db.execute("""
+                        UPDATE network_monitoring_config
+                        SET last_scan_at = ?, next_scan_at = ?, updated_at = ?
+                    """, (now_failed, next_scan_time, now_failed))
                     record_audit_entry(
                         db,
                         actor=triggered_by,
                         action="NETWORK_SCAN_FAILURE",
                         resource=f"scan_jobs:{job_id}",
-                        details={"error": err_msg}
+                        details={"error": err_msg, "next_scan_at": next_scan_time}
                     )
                 return {"status": "FAILED", "job_id": job_id, "error": err_msg}
             finally:
@@ -463,9 +533,12 @@ class NetworkMonitoringService:
         """Persistent background scheduler loop that periodically wakes up,
         checks if scan interval has elapsed, and runs the scan cycle without blocking.
         """
-        # Initial brief sleep to let the ASGI web server finish binding ports and accept connections
+        # Initial startup grace period (30s) to let ASGI finish binding and health probes pass cleanly
         try:
-            await asyncio.sleep(2)
+            for _ in range(self._initial_delay_seconds):
+                if self._stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
         except asyncio.CancelledError:
             return
 
@@ -477,7 +550,8 @@ class NetworkMonitoringService:
                     cfg = db.execute("SELECT * FROM network_monitoring_config LIMIT 1").fetchone()
                     if cfg:
                         cfg_d = dict(cfg)
-                        if cfg_d["service_enabled"] == 1 and cfg_d["is_paused"] == 0 and cfg_d["emergency_stop"] == 0:
+                        self._emergency_stop_cached = bool(cfg_d.get("emergency_stop") == 1)
+                        if cfg_d["service_enabled"] == 1 and cfg_d["is_paused"] == 0 and not self._emergency_stop_cached:
                             next_scan_iso = cfg_d.get("next_scan_at")
                             if not next_scan_iso:
                                 should_scan = True
@@ -497,9 +571,12 @@ class NetworkMonitoringService:
             except Exception as e:
                 logger.error(f"Error in network monitor scheduler loop: {e}", exc_info=True)
 
-            # Sleep 2 seconds before next tick
+            # Sleep 5 seconds before next evaluation tick
             try:
-                await asyncio.sleep(2)
+                for _ in range(5):
+                    if self._stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
             except asyncio.CancelledError:
                 break
 

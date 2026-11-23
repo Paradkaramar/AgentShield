@@ -35,6 +35,7 @@ interface Props {
   onRetry?: () => void;
   isSpeaking?: boolean;
   onStopSpeaking?: () => void;
+  onStopGeneration?: () => void;
   aiMode?: "local" | "online" | "auto";
   onSelectAiMode?: (mode: "local" | "online" | "auto") => void;
   dualModelStatus?: AIDualModelStatusPayload | null;
@@ -57,6 +58,7 @@ export const JarvisChatPanel: React.FC<Props> = ({
   onRetry,
   isSpeaking = false,
   onStopSpeaking,
+  onStopGeneration,
   aiMode = "auto",
   onSelectAiMode,
   dualModelStatus,
@@ -117,7 +119,7 @@ export const JarvisChatPanel: React.FC<Props> = ({
       setLocalTestRes({
         model_type: "local",
         provider: "ollama",
-        model: modelStatus?.local_model.name || "qwen2.5:3b",
+        model: modelStatus?.local_model.name || "dolphinlabs/qwen3.5-uncensored",
         status: "FAIL",
         latency_ms: 0,
         test_prompt: "Ping test: Respond in one short sentence confirming Zero-Trust AI status.",
@@ -426,8 +428,8 @@ export const JarvisChatPanel: React.FC<Props> = ({
             <span>
               {currentAiMode === "local" && (
                 modelStatus?.local_model.online
-                  ? `Local: ${modelStatus.local_model.name} (${modelStatus.local_model.status})`
-                  : `Local: ${modelStatus?.local_model.name || 'qwen2.5:3b'} (Offline - Run 'ollama serve')`
+                  ? `Local: ${modelStatus.local_model.name} (${modelStatus.local_model.status || '100% GPU'})`
+                  : `Local: ${modelStatus?.local_model.name || 'dolphinlabs/qwen3.5-uncensored'} (Offline - Run 'ollama serve')`
               )}
               {currentAiMode === "online" && (
                 modelStatus?.online_model.configured
@@ -743,6 +745,29 @@ export const JarvisChatPanel: React.FC<Props> = ({
                       title="Play/Replay Voice Synthesis"
                     >
                       <Volume2 size={11} /> Play Voice
+                    </button>
+                  )}
+                  {isAssistant && (
+                    <button
+                      type="button"
+                      className="btn-msg-copy"
+                      onClick={() => handleCopy(msgKey, m.content)}
+                      title="Copy response to clipboard"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "3px",
+                        background: "rgba(255, 255, 255, 0.06)",
+                        border: "1px solid rgba(255, 255, 255, 0.15)",
+                        borderRadius: "4px",
+                        color: copiedId === msgKey ? "#10b981" : "#94a3b8",
+                        cursor: "pointer",
+                        fontSize: "11px",
+                        padding: "2px 6px"
+                      }}
+                    >
+                      {copiedId === msgKey ? <Check size={11} /> : <Copy size={11} />}
+                      <span>{copiedId === msgKey ? "Copied" : "Copy"}</span>
                     </button>
                   )}
                   {m.audio_confidence !== undefined && m.audio_confidence !== null && (
@@ -1068,14 +1093,42 @@ export const JarvisChatPanel: React.FC<Props> = ({
 
         {/* Processing Indicator */}
         {isProcessing && (
-          <div className="chat-message-row assistant processing-bubble">
-            <div className="message-avatar"><Bot size={16} /></div>
-            <div className="processing-indicator">
-              <span className="processing-dot" />
-              <span className="processing-dot" />
-              <span className="processing-dot" />
-              <span className="processing-label">JARVIS reasoning & verifying telemetry...</span>
+          <div className="chat-message-row assistant processing-bubble" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div className="message-avatar"><Bot size={16} /></div>
+              <div className="processing-indicator">
+                <span className="processing-dot" />
+                <span className="processing-dot" />
+                <span className="processing-dot" />
+                <span className="processing-label">
+                  AMOJA AI reasoning ({modelStatus?.local_model.name || "dolphinlabs/qwen3.5-uncensored"})...
+                </span>
+              </div>
             </div>
+            {onStopGeneration && (
+              <button
+                type="button"
+                className="btn-chat-interrupt"
+                onClick={onStopGeneration}
+                title="Stop AI Generation immediately"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  background: "rgba(239, 68, 68, 0.18)",
+                  border: "1px solid rgba(239, 68, 68, 0.4)",
+                  color: "#ef4444",
+                  borderRadius: "4px",
+                  padding: "4px 8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                <Square size={12} fill="currentColor" />
+                <span>Stop</span>
+              </button>
+            )}
           </div>
         )}
 

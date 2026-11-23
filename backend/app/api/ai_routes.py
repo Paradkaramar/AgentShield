@@ -1,5 +1,7 @@
+import json
 from fastapi import APIRouter, HTTPException, Depends, status, Request, Query
-from typing import Dict, Any, Optional
+from fastapi.responses import StreamingResponse
+from typing import Dict, Any, Optional, List
 
 from ..core.auth import get_current_user
 from ..jarvis.jarvis_schemas import (
@@ -18,6 +20,9 @@ from ..jarvis.ai_router import (
     AIInferenceTimeoutError,
     AIProviderError
 )
+from ..services.ollama_service import ollama_service
+from ..jarvis.jarvis_security import check_message_for_prompt_injection
+from ..jarvis.multilingual_commands import check_multilingual_prompt_injection
 
 router = APIRouter(prefix="/api/ai", tags=["Local & Cloud AI Router"])
 
@@ -53,6 +58,87 @@ async def ai_chat_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI Router execution failure: {str(e)}"
         )
+
+@router.post("/chat/stream")
+async def ai_chat_stream_endpoint(
+    request: Request,
+    payload: AIChatRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Real-time streaming AI chat endpoint for AMOJA AI.
+    Emits token chunks line-by-line via Server-Sent Events (SSE) with prompt-injection screening.
+    """
+    await request.body()
+    msg = payload.message.strip()
+    if not msg:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message content cannot be empty."
+        )
+    if len(msg) > 4000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message exceeds maximum allowed limit of 4000 characters."
+        )
+
+    # 1. Screen incoming prompt for injection
+    injection_screen = check_multilingual_prompt_injection(msg)
+    if not injection_screen.get("is_threat"):
+        injection_screen = check_message_for_prompt_injection(msg)
+
+    if injection_screen.get("is_threat"):
+        reasons = ", ".join(injection_screen.get("reasons", ["Unsafe prompt signature"]))
+        blocked_msg = f"🛑 Zero-Trust Barrier: Request flagged by AgentShield ({reasons})."
+        async def blocked_stream():
+            yield f"data: {json.dumps({'token': blocked_msg, 'done': True, 'blocked': True})}\n\n"
+        return StreamingResponse(blocked_stream(), media_type="text/event-stream")
+
+    # 2. Build history
+    messages: List[Dict[str, str]] = []
+    if payload.conversation_history:
+        for turn in payload.conversation_history[-10:]:
+            if "role" in turn and "content" in turn:
+                messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": msg})
+
+    # 3. Stream from Ollama
+    async def sse_token_generator():
+        try:
+            async for chunk in ollama_service.chat_stream(
+                messages=messages,
+                model=payload.model,
+                temperature=payload.temperature or 0.7,
+                max_tokens=payload.max_tokens or 1024,
+                system_prompt=payload.system_prompt
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
+
+    return StreamingResponse(
+        sse_token_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+@router.get("/ollama/health")
+async def ollama_health_endpoint(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Dedicated health endpoint for Ollama local runtime:
+    - Reachability
+    - Installed models catalog
+    - Active resident model in memory (/api/ps)
+    - Hardware GPU offloading status (e.g. '100% GPU' on RTX 3050)
+    - Connection latency in ms
+    """
+    return await ollama_service.check_health()
 
 @router.get("/status", response_model=AIDualModelStatus)
 async def ai_dual_model_status_endpoint(

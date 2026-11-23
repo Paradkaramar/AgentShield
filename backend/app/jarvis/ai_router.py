@@ -11,13 +11,30 @@ from typing import Dict, Any, List, Optional, Tuple
 from ..core.config import (
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
+    OLLAMA_API_KEY,
     OLLAMA_TIMEOUT,
     OLLAMA_MODELS_DIR,
     AI_ROUTER_DEFAULT_PROVIDER,
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
     GEMINI_API_KEY,
+    GEMINI_MODEL,
+    GROQ_API_KEY,
+    GROQ_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_MODEL,
+    AI_GATEWAY_TIMEOUT,
+    AI_AUTO_FALLBACK,
     SECRET_VAULT
+)
+from ..core.prompts import DEFAULT_AMOJA_SYSTEM_PROMPT, get_system_prompt
+from ..services.ollama_service import (
+    ollama_service,
+    OllamaConnectionError,
+    OllamaModelNotFoundError,
+    OllamaTimeoutError,
+    OllamaOutOfMemoryError,
+    OllamaResponseError
 )
 from .jarvis_schemas import (
     AIChatRequest,
@@ -75,66 +92,33 @@ class AIRouter:
         self,
         base_url: Optional[str] = None,
         default_model: Optional[str] = None,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
+        api_key: Optional[str] = None
     ):
         self.base_url = (base_url or OLLAMA_BASE_URL).rstrip("/")
         self.default_model = default_model or OLLAMA_MODEL
         self.timeout = timeout or OLLAMA_TIMEOUT
+        self.api_key = api_key if api_key is not None else OLLAMA_API_KEY
         self.default_provider = AI_ROUTER_DEFAULT_PROVIDER
         self.last_local_test: Optional[AIInferenceTestResult] = None
         self.last_online_test: Optional[AIInferenceTestResult] = None
 
     async def check_local_health(self) -> Dict[str, Any]:
-        """Checks if local Ollama daemon is reachable and lists installed models."""
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{self.base_url}/api/tags")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    has_target = any(
-                        self.default_model in m or m.startswith(self.default_model.split(":")[0])
-                        for m in models
-                    ) if self.default_model else False
-                    return {
-                        "online": True,
-                        "base_url": self.base_url,
-                        "default_model": self.default_model,
-                        "model_installed": has_target,
-                        "installed_models": models,
-                        "models_count": len(models),
-                        "error": None
-                    }
-                else:
-                    return {
-                        "online": False,
-                        "base_url": self.base_url,
-                        "default_model": self.default_model,
-                        "model_installed": False,
-                        "installed_models": [],
-                        "models_count": 0,
-                        "error": f"Ollama returned HTTP {resp.status_code}"
-                    }
-        except httpx.ConnectError:
-            return {
-                "online": False,
-                "base_url": self.base_url,
-                "default_model": self.default_model,
-                "model_installed": False,
-                "installed_models": [],
-                "models_count": 0,
-                "error": "Connection refused (Ollama daemon is not running)"
-            }
-        except Exception as e:
-            return {
-                "online": False,
-                "base_url": self.base_url,
-                "default_model": self.default_model,
-                "model_installed": False,
-                "installed_models": [],
-                "models_count": 0,
-                "error": str(e)
-            }
+        """Checks if local Ollama daemon is reachable, lists models, and checks RTX GPU status."""
+        health = await ollama_service.check_health()
+        return {
+            "online": health.get("online", False),
+            "base_url": self.base_url,
+            "default_model": self.default_model,
+            "model_installed": health.get("model_installed", False),
+            "installed_models": health.get("installed_models", []),
+            "models_count": health.get("models_count", 0),
+            "model_loaded": health.get("model_loaded", False),
+            "running_models": health.get("running_models", []),
+            "gpu_status": health.get("gpu_status", "UNKNOWN"),
+            "latency_ms": health.get("latency_ms", 0),
+            "error": health.get("error")
+        }
 
     def get_storage_status(self) -> Dict[str, Any]:
         """Calculates free disk space for C: and E: drives to prevent disk exhaustion."""
@@ -170,7 +154,15 @@ class AIRouter:
         cloud_providers = {
             "gemini": {
                 "configured": bool(GEMINI_API_KEY),
-                "model": "gemini-1.5-flash"
+                "model": GEMINI_MODEL
+            },
+            "openrouter": {
+                "configured": bool(OPENROUTER_API_KEY),
+                "model": OPENROUTER_MODEL
+            },
+            "groq": {
+                "configured": bool(GROQ_API_KEY),
+                "model": GROQ_MODEL
             },
             "openai": {
                 "configured": bool(OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo")),
@@ -247,8 +239,18 @@ class AIRouter:
         Executes a genuine cloud inference test against the configured online AI model provider API.
         Measures real API latency and verifies that the cloud model responds properly.
         """
-        target_provider = (provider or ("gemini" if GEMINI_API_KEY else ("openai" if (OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo")) else "gemini"))).lower()
-        model_name = "gemini-1.5-flash" if target_provider == "gemini" else ("gpt-4o-mini" if target_provider == "openai" else "claude-3-haiku-20240307")
+        target_provider = (provider or ("gemini" if GEMINI_API_KEY else ("groq" if GROQ_API_KEY else ("openrouter" if OPENROUTER_API_KEY else ("openai" if (OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo")) else "gemini"))))).lower()
+        if target_provider == "gemini":
+            model_name = GEMINI_MODEL
+        elif target_provider == "groq":
+            model_name = GROQ_MODEL
+        elif target_provider == "openrouter":
+            model_name = OPENROUTER_MODEL
+        elif target_provider == "openai":
+            model_name = "gpt-4o-mini"
+        else:
+            model_name = "claude-3-haiku-20240307"
+
         test_prompt = "Ping test: Respond in one short sentence confirming Cloud AI status."
         start_t = time.time()
         tested_at = now_iso()
@@ -273,6 +275,36 @@ class AIRouter:
             )
             self.last_online_test = result
             return result
+        elif target_provider == "groq" and not GROQ_API_KEY:
+            latency_ms = int((time.time() - start_t) * 1000)
+            result = AIInferenceTestResult(
+                model_type="online",
+                provider=target_provider,
+                model=model_name,
+                status="FAIL",
+                latency_ms=latency_ms,
+                test_prompt=test_prompt,
+                response=None,
+                error="GROQ_API_KEY is not configured in backend environment or .env file.",
+                tested_at=tested_at
+            )
+            self.last_online_test = result
+            return result
+        elif target_provider == "openrouter" and not OPENROUTER_API_KEY:
+            latency_ms = int((time.time() - start_t) * 1000)
+            result = AIInferenceTestResult(
+                model_type="online",
+                provider=target_provider,
+                model=model_name,
+                status="FAIL",
+                latency_ms=latency_ms,
+                test_prompt=test_prompt,
+                response=None,
+                error="OPENROUTER_API_KEY is not configured in backend environment or .env file.",
+                tested_at=tested_at
+            )
+            self.last_online_test = result
+            return result
         elif target_provider == "openai" and (not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-proj-demo")):
             latency_ms = int((time.time() - start_t) * 1000)
             result = AIInferenceTestResult(
@@ -292,6 +324,10 @@ class AIRouter:
         try:
             if target_provider == "gemini":
                 res = await self.infer_gemini(messages)
+            elif target_provider == "groq":
+                res = await self.infer_groq(messages)
+            elif target_provider == "openrouter":
+                res = await self.infer_openrouter(messages)
             elif target_provider == "openai":
                 res = await self.infer_openai(messages)
             else:
@@ -391,22 +427,49 @@ class AIRouter:
         """Returns a list of all configured and supported AI providers."""
         providers = [
             {
-                "id": "local",
-                "name": "Local Ollama (GGUF Quantized)",
+                "id": "ollama",
+                "name": "Local Ollama (RTX 3050 GPU Accelerated)",
                 "type": "local",
                 "model": self.default_model,
                 "endpoint": self.base_url,
                 "is_offline": True,
-                "description": "Zero-cloud on-device private inference powered by Ollama and Hugging Face GGUF models."
+                "description": "Zero-cloud on-device private inference powered by Ollama and local GPU acceleration."
+            },
+            {
+                "id": "local",
+                "name": "Local Ollama",
+                "type": "local",
+                "model": self.default_model,
+                "endpoint": self.base_url,
+                "is_offline": True,
+                "description": "Alias for local Ollama runtime."
             },
             {
                 "id": "gemini",
                 "name": "Google Gemini",
                 "type": "cloud",
-                "model": "gemini-1.5-flash",
+                "model": GEMINI_MODEL,
                 "configured": bool(GEMINI_API_KEY),
                 "is_offline": False,
                 "description": "High-throughput cloud multimodal reasoning via Google Gemini API."
+            },
+            {
+                "id": "openrouter",
+                "name": "OpenRouter API",
+                "type": "cloud",
+                "model": OPENROUTER_MODEL,
+                "configured": bool(OPENROUTER_API_KEY),
+                "is_offline": False,
+                "description": "Multi-model cloud gateway via OpenRouter."
+            },
+            {
+                "id": "groq",
+                "name": "Groq LPU",
+                "type": "cloud",
+                "model": GROQ_MODEL,
+                "configured": bool(GROQ_API_KEY),
+                "is_offline": False,
+                "description": "Ultra-fast low-latency cloud inference via Groq."
             },
             {
                 "id": "openai",
@@ -448,57 +511,108 @@ class AIRouter:
         temperature: float = 0.7,
         max_tokens: int = 1024
     ) -> Dict[str, Any]:
-        """Executes local inference via the Ollama REST API."""
+        """Executes local inference via the dedicated OllamaService."""
         target_model = model or self.default_model
+        try:
+            res = await ollama_service.chat_completion(
+                messages=messages,
+                model=target_model,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            return {
+                "text": res["text"],
+                "raw_text": res.get("raw_text"),
+                "provider": "local_ollama",
+                "model": target_model,
+                "is_local": True
+            }
+        except OllamaConnectionError as ce:
+            raise AIRuntimeUnavailableError(
+                f"Cannot connect to Ollama runtime at {self.base_url}. Please run: ollama serve"
+            ) from ce
+        except OllamaModelNotFoundError as me:
+            raise AIModelNotFoundError(str(me)) from me
+        except OllamaTimeoutError as te:
+            raise AIInferenceTimeoutError(str(te)) from te
+        except Exception as exc:
+            raise AIProviderError(str(exc)) from exc
+
+    async def infer_openrouter(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> Dict[str, Any]:
+        """Executes inference via OpenRouter API."""
+        api_key = OPENROUTER_API_KEY
+        if not api_key:
+            raise AIProviderError("OpenRouter API key is not configured.")
+        target_model = model or OPENROUTER_MODEL
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "http://127.0.0.1:8000",
+            "X-Title": "AgentShield AMOJA AI",
+            "Content-Type": "application/json"
+        }
         payload = {
             "model": target_model,
             "messages": messages,
-            "stream": False,
-            "options": {
-                "temperature": max(0.0, min(temperature, 2.0)),
-                "num_predict": max_tokens
-            }
+            "temperature": temperature,
+            "max_tokens": 1024
         }
-
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(f"{self.base_url}/api/chat", json=payload)
-
-                if response.status_code == 404:
-                    raise AIModelNotFoundError(
-                        f"Model '{target_model}' was not found in Ollama. "
-                        f"Please pull it first by running: ollama pull {target_model}"
-                    )
-                elif response.status_code != 200:
-                    err_body = response.text
-                    try:
-                        err_json = response.json()
-                        err_body = err_json.get("error", err_body)
-                    except Exception:
-                        pass
-                    raise AIProviderError(f"Ollama returned error (status {response.status_code}): {err_body}")
-
-                data = response.json()
-                msg = data.get("message", {}).get("content", "")
-                if not msg:
-                    raise AIProviderError("Ollama returned an empty response.")
-
+            async with httpx.AsyncClient(timeout=AI_GATEWAY_TIMEOUT) as client:
+                res = await client.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload)
+                if res.status_code != 200:
+                    raise AIProviderError(f"OpenRouter API error {res.status_code}: {res.text}")
+                data = res.json()
+                text = data["choices"][0]["message"]["content"]
                 return {
-                    "text": msg.strip(),
-                    "provider": "local_ollama",
+                    "text": text.strip(),
+                    "provider": "cloud_openrouter",
                     "model": target_model,
-                    "is_local": True
+                    "is_local": False
                 }
+        except httpx.TimeoutException:
+            raise AIInferenceTimeoutError("OpenRouter cloud request timed out.")
 
-        except httpx.ConnectError as ce:
-            raise AIRuntimeUnavailableError(
-                f"Cannot connect to Ollama runtime at {self.base_url}. "
-                f"Please start Ollama service using: ollama serve"
-            ) from ce
-        except httpx.TimeoutException as te:
-            raise AIInferenceTimeoutError(
-                f"Ollama inference timed out after {self.timeout} seconds for model '{target_model}'."
-            ) from te
+    async def infer_groq(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        temperature: float = 0.7
+    ) -> Dict[str, Any]:
+        """Executes inference via Groq Cloud API."""
+        api_key = GROQ_API_KEY
+        if not api_key:
+            raise AIProviderError("Groq API key is not configured.")
+        target_model = model or GROQ_MODEL
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": target_model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 1024
+        }
+        try:
+            async with httpx.AsyncClient(timeout=AI_GATEWAY_TIMEOUT) as client:
+                res = await client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
+                if res.status_code != 200:
+                    raise AIProviderError(f"Groq API error {res.status_code}: {res.text}")
+                data = res.json()
+                text = data["choices"][0]["message"]["content"]
+                return {
+                    "text": text.strip(),
+                    "provider": "cloud_groq",
+                    "model": target_model,
+                    "is_local": False
+                }
+        except httpx.TimeoutException:
+            raise AIInferenceTimeoutError("Groq cloud request timed out.")
 
     async def infer_gemini(
         self,
@@ -700,7 +814,7 @@ class AIRouter:
 
         # 3. Assemble chat message history
         messages: List[Dict[str, str]] = []
-        sys_prompt = request.system_prompt or DEFAULT_AMOJA_SYSTEM_PROMPT
+        sys_prompt = request.system_prompt or get_system_prompt()
         messages.append({"role": "system", "content": sys_prompt})
 
         if request.conversation_history:
@@ -714,9 +828,9 @@ class AIRouter:
         req_mode = (request.mode or "").lower()
         if req_mode in ["local", "online", "auto"]:
             mode = req_mode
-        elif (request.provider or "").lower() == "local":
+        elif (request.provider or "").lower() in ["local", "ollama"]:
             mode = "local"
-        elif (request.provider or "").lower() in ["gemini", "openai", "anthropic"]:
+        elif (request.provider or "").lower() in ["gemini", "openrouter", "groq", "openai", "anthropic"]:
             mode = "online"
         else:
             mode = "auto"
@@ -758,13 +872,15 @@ class AIRouter:
 
         elif mode == "online":
             # Strict Online Mode: strictly cloud provider API. Local fallback prohibited.
-            target_cloud = (request.provider or ("gemini" if GEMINI_API_KEY else ("openai" if (OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo")) else "gemini"))).lower()
-            if target_cloud not in ["gemini", "openai"]:
-                target_cloud = "gemini" if GEMINI_API_KEY else "openai"
+            target_cloud = (request.provider or ("gemini" if GEMINI_API_KEY else ("groq" if GROQ_API_KEY else ("openrouter" if OPENROUTER_API_KEY else "gemini")))).lower()
 
             try:
                 if target_cloud == "gemini":
                     result = await self.infer_gemini(messages, temperature=request.temperature or 0.7)
+                elif target_cloud == "groq":
+                    result = await self.infer_groq(messages, temperature=request.temperature or 0.7)
+                elif target_cloud == "openrouter":
+                    result = await self.infer_openrouter(messages, temperature=request.temperature or 0.7)
                 elif target_cloud == "openai":
                     result = await self.infer_openai(messages, temperature=request.temperature or 0.7)
                 else:
@@ -788,14 +904,25 @@ class AIRouter:
                 fallback_reason = f"Online mode failure (local fallback prohibited): {err_msg}"
 
         else:
-            # Auto Mode: Dynamic routing with graceful fallback permitted.
-            preferred_provider = (request.provider or self.default_provider or "auto").lower()
+            # Auto Mode: Dynamic routing with privacy-safe zero-trust policy.
+            preferred_provider = (request.provider or self.default_provider or "ollama").lower()
+            if preferred_provider == "local":
+                preferred_provider = "ollama"
 
-            if preferred_provider in ["gemini", "openai"]:
+            # Check if fallback to cloud is permitted
+            allow_cloud_fallback = getattr(request, "allow_fallback", None)
+            if allow_cloud_fallback is None:
+                allow_cloud_fallback = AI_AUTO_FALLBACK
+
+            if preferred_provider in ["gemini", "openrouter", "groq", "openai"]:
                 # Explicit cloud preference in auto mode with local fallback
                 try:
                     if preferred_provider == "gemini":
                         result = await self.infer_gemini(messages, temperature=request.temperature or 0.7)
+                    elif preferred_provider == "openrouter":
+                        result = await self.infer_openrouter(messages, temperature=request.temperature or 0.7)
+                    elif preferred_provider == "groq":
+                        result = await self.infer_groq(messages, temperature=request.temperature or 0.7)
                     else:
                         result = await self.infer_openai(messages, temperature=request.temperature or 0.7)
                 except Exception as cloud_err:
@@ -811,7 +938,7 @@ class AIRouter:
                 result = self.infer_heuristic(request.message, lang=detected_lang)
 
             else:
-                # Default Auto Route: Local-first for Zero-Trust privacy, with cloud fallback if configured
+                # Default: Local Ollama first for Zero-Trust Privacy
                 try:
                     result = await self.infer_ollama(
                         messages=messages,
@@ -821,24 +948,36 @@ class AIRouter:
                     )
                 except Exception as e:
                     fallback_occurred = True
-                    fallback_reason = f"Local model unavailable ({str(e)}). Falling back to cloud."
+                    if allow_cloud_fallback:
+                        fallback_reason = f"Local model unavailable ({str(e)}). Falling back to cloud."
+                        cloud_success = False
+                        for c_prov in ["gemini", "openrouter", "groq", "openai"]:
+                            try:
+                                if c_prov == "gemini" and GEMINI_API_KEY:
+                                    result = await self.infer_gemini(messages, temperature=request.temperature or 0.7)
+                                    cloud_success = True
+                                    break
+                                elif c_prov == "openrouter" and OPENROUTER_API_KEY:
+                                    result = await self.infer_openrouter(messages, temperature=request.temperature or 0.7)
+                                    cloud_success = True
+                                    break
+                                elif c_prov == "groq" and GROQ_API_KEY:
+                                    result = await self.infer_groq(messages, temperature=request.temperature or 0.7)
+                                    cloud_success = True
+                                    break
+                                elif c_prov == "openai" and OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo"):
+                                    result = await self.infer_openai(messages, temperature=request.temperature or 0.7)
+                                    cloud_success = True
+                                    break
+                            except Exception:
+                                pass
 
-                    cloud_success = False
-                    if GEMINI_API_KEY:
-                        try:
-                            result = await self.infer_gemini(messages, temperature=request.temperature or 0.7)
-                            cloud_success = True
-                        except Exception as c_err:
-                            fallback_reason += f" Cloud Gemini failed ({str(c_err)})."
-                    elif OPENAI_API_KEY and not OPENAI_API_KEY.startswith("sk-proj-demo"):
-                        try:
-                            result = await self.infer_openai(messages, temperature=request.temperature or 0.7)
-                            cloud_success = True
-                        except Exception as c_err:
-                            fallback_reason += f" Cloud OpenAI failed ({str(c_err)})."
-
-                    if not cloud_success or not result:
-                        fallback_reason += " Falling back to offline resilient heuristic engine."
+                        if not cloud_success or not result:
+                            fallback_reason += " Falling back to offline resilient heuristic engine."
+                            result = self.infer_heuristic(request.message, lang=detected_lang)
+                    else:
+                        # Zero-Trust Default: Do NOT silently exfiltrate private prompts to cloud!
+                        fallback_reason = f"Local Ollama unavailable ({str(e)}). Cloud fallback is disabled to protect local privacy. Operating in offline deterministic mode."
                         result = self.infer_heuristic(request.message, lang=detected_lang)
 
         # 5. Sanitize output to prevent token / key leakages

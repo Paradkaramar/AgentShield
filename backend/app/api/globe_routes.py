@@ -70,6 +70,11 @@ class TrafficCaptureStartRequest(BaseModel):
     duration_seconds: int = Field(15, ge=5, le=60)
     max_packets: int = Field(200, ge=10, le=1000)
 
+class ThreatIntelExplainRequest(BaseModel):
+    category: str = Field("all", description="'global_threat_intel', 'local_scan_findings', or 'all'")
+    user_query: Optional[str] = None
+    language: Optional[str] = Field("en", description="'en', 'hi', or 'mr'")
+
 
 # --- Endpoints ---
 
@@ -620,3 +625,105 @@ async def stop_traffic_capture(user: Dict[str, Any] = Depends(require_roles(["ad
     """Terminates active live capture session and returns parsed packet metrics."""
     result = await traffic_monitor_service.stop_live_capture()
     return result
+
+
+@router.get("/threat-intel/status")
+def get_threat_intel_status(user: Dict[str, Any] = Depends(get_current_user)):
+    """Returns integration status and architectural boundaries for external global threat intelligence."""
+    return {
+        "provider": "Radware Live Threat Map",
+        "reference_url": "https://livethreatmap.radware.com/",
+        "supported_integration_method": "iframe_web_view",
+        "official_public_api_available": False,
+        "official_embed_code_available": False,
+        "data_scope": "Worldwide live DDoS, volumetric botnets, Web Application exploits, and Layer 7 malicious HTTP vectors captured across Radware's global threat deception network and cloud systems.",
+        "local_data_isolation": "ENFORCED",
+        "data_leakage_risk": "ZERO - No local IP addresses, packet streams, or AgentShield findings are sent to external services.",
+        "embedding_technical_notes": "Radware's public web property does not issue X-Frame-Options: DENY. Iframe embedding is attempted directly; if blocked by client-side browser tracking protection or network firewalls, an external link fallback is provided."
+    }
+
+
+@router.post("/threat-intel/explain")
+def explain_threat_intelligence(
+    req: ThreatIntelExplainRequest,
+    user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Produces a rigorous, objective AMOJA AI cybersecurity explanation
+    distinguishing public threat intelligence from AgentShield's local scan findings.
+    Zero hallucinated metrics, zero private API claims, and strict data isolation.
+    """
+    with connect() as db:
+        host_count = db.execute("SELECT COUNT(*) FROM network_assets").fetchone()[0]
+        alert_count = db.execute("SELECT COUNT(*) FROM network_security_alerts").fetchone()[0]
+        services = [dict(r) for r in db.execute("SELECT port, service_name, COUNT(*) as cnt FROM service_observations WHERE state = 'OPEN' GROUP BY port, service_name ORDER BY cnt DESC LIMIT 5").fetchall()]
+
+    open_ports_summary = [f"Port {s['port']} ({s['service_name']}: {s['cnt']} host(s))" for s in services]
+
+    global_intel = {
+        "source": "Radware Live Threat Map (Public Cyber Threat Showcase)",
+        "feed_type": "Macro Global Deception Network & Cloud Sensors",
+        "data_interface_status": "Public Web Visualization • No official developer REST API available",
+        "typical_attack_vectors": [
+            "Volumetric DDoS (UDP/NTP/DNS reflection amplification)",
+            "Web Application Attacks (SQLi, XSS, Remote Code Execution, Path Traversal)",
+            "Bad Bot Automation (Credential stuffing, scraping, automated API brute force)",
+            "Layer 7 HTTP Floods & TLS Renegotiation Attacks"
+        ],
+        "threat_landscape_summary": (
+            "Radware's Live Threat Map displays near real-time global cyberattack trajectories captured across its "
+            "proprietary cloud deception honeypots and cloud scrubbing centers. Attacks displayed represent worldwide macro trends "
+            "targeting enterprise web assets and DNS/network infrastructure globally."
+        )
+    }
+
+    local_telemetry = {
+        "source": "AgentShield Local Zero-Trust Scanner & Telemetry Engine",
+        "discovered_hosts_count": host_count,
+        "active_alerts_count": alert_count,
+        "top_exposed_ports": open_ports_summary or ["No open enterprise ports recorded"],
+        "telemetry_egress_policy": "STRICT_LOCAL_ISOLATION - Zero packets, IPs, or captures egress to external clouds"
+    }
+
+    comparative_analysis = {
+        "data_merging_policy": "DISALLOWED - Global and local datasets are kept strictly segregated to prevent misleading SOC operators.",
+        "key_distinction": (
+            "Attacks visualized on the Radware Global Threat Map reflect Internet-wide attacks against Radware honeypots, "
+            "whereas AgentShield's Cyber Globe displays verified hosts, open ports, and live packets within your authorized local scope."
+        ),
+        "posture_recommendation": (
+            f"Review local hosts exposing sensitive ports ({', '.join([str(s['port']) for s in services]) or 'None'}) "
+            "against common global attack vectors (e.g. brute-force, web exploits) to verify defense-in-depth controls."
+        )
+    }
+
+    lang = (req.language or "en").lower()
+    if lang.startswith("hi"):
+        spoken_summary = (
+            "Global Threat Map Radware ke global deception network ke attacks dikhata hai jaise DDoS aur web exploits. "
+            f"Hamare local network mein {host_count} hosts discovered hain aur {alert_count} alerts hain. "
+            "Dono data bilkul alag rakhe gaye hain aur local IP bahar kisi bhi service ko nahi bheji jati."
+        )
+    elif lang.startswith("mr"):
+        spoken_summary = (
+            "Global Threat Map Radware chya global deception network che attacks dakhvato jase DDoS aani web exploits. "
+            f"Aplya local network madhe {host_count} hosts discovered ahet aani {alert_count} alerts ahet. "
+            "Doanhi data purna vegla thevla ahe aani local IP baher kothyehi pathavla jaat nahi."
+        )
+    else:
+        spoken_summary = (
+            f"Global Threat Intelligence reflects worldwide DDoS and exploit attacks from Radware's global deception network. "
+            f"Your local scope has {host_count} discovered hosts and {alert_count} active alerts. "
+            "Global threat data is strictly segregated from your local telemetry, ensuring zero local data exposure."
+        )
+
+    return {
+        "title": "AMOJA AI // Global Threat Intelligence & Local Posture Assessment",
+        "status": "VERIFIED",
+        "timestamp": now_iso(),
+        "global_threat_intel": global_intel,
+        "local_network_findings": local_telemetry,
+        "comparative_analysis": comparative_analysis,
+        "spoken_briefing": spoken_summary,
+        "privacy_guarantee": "ZERO_DATA_EGRESS: Local scan records, host IPs, and PCAP captures remain 100% on-premises."
+    }
+

@@ -9,11 +9,17 @@
     "start": "node run_desktop.js",
     "dev": "node run_desktop.js"
   },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  },
   "keywords": [
     "endpoint-security",
     "zero-trust",
     "personal-device-security",
     "agentshield",
     "firewall"
-  ]
+  ],
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
 }

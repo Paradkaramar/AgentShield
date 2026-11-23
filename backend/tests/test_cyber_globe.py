@@ -166,3 +166,45 @@ def test_traffic_stream_endpoint():
     assert "src" in pkt
     assert "dst" in pkt
     assert "protocol" in pkt
+
+
+def test_threat_intel_status_endpoint():
+    """Tests GET /api/globe/threat-intel/status accurately describes Radware integration boundaries."""
+    res = client.get("/api/globe/threat-intel/status", headers=auth_headers())
+    assert res.status_code == 200
+    data = res.json()
+    assert data["provider"] == "Radware Live Threat Map"
+    assert data["reference_url"] == "https://livethreatmap.radware.com/"
+    assert data["supported_integration_method"] == "iframe_web_view"
+    assert data["official_public_api_available"] is False
+    assert data["local_data_isolation"] == "ENFORCED"
+    assert "ZERO" in data["data_leakage_risk"]
+
+
+def test_threat_intel_explain_endpoint():
+    """Tests POST /api/globe/threat-intel/explain produces segregated, objective reasoning without data confusion."""
+    # Test English
+    res_en = client.post("/api/globe/threat-intel/explain", json={"category": "all", "language": "en"}, headers=auth_headers())
+    assert res_en.status_code == 200
+    data_en = res_en.json()
+    assert data_en["status"] == "VERIFIED"
+    assert "global_threat_intel" in data_en
+    assert "local_network_findings" in data_en
+    assert "comparative_analysis" in data_en
+    assert "ZERO_DATA_EGRESS" in data_en["privacy_guarantee"]
+    assert "Radware" in data_en["global_threat_intel"]["source"]
+    assert "AgentShield" in data_en["local_network_findings"]["source"]
+
+    # Test Hindi
+    res_hi = client.post("/api/globe/threat-intel/explain", json={"category": "all", "language": "hi"}, headers=auth_headers())
+    assert res_hi.status_code == 200
+    data_hi = res_hi.json()
+    assert "Radware" in data_hi["spoken_briefing"]
+    assert "local network" in data_hi["spoken_briefing"].lower()
+
+    # Test Marathi
+    res_mr = client.post("/api/globe/threat-intel/explain", json={"category": "all", "language": "mr"}, headers=auth_headers())
+    assert res_mr.status_code == 200
+    data_mr = res_mr.json()
+    assert "Radware" in data_mr["spoken_briefing"]
+

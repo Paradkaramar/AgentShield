@@ -51,10 +51,12 @@ export async function sendJarvisMessage(
     context?: import("./types").JarvisSecurityContext;
     personalityMode?: "friendly" | "security";
     aiMode?: "local" | "online" | "auto";
+    signal?: AbortSignal;
   }
 ) {
   return request<any>("/api/jarvis/chat", {
     method: "POST",
+    signal: options?.signal,
     body: JSON.stringify({
       message,
       session_id: options?.sessionId,
@@ -639,6 +641,83 @@ export async function testOnlineModel(provider?: string): Promise<import("./type
     method: "POST",
     body: JSON.stringify(provider ? { provider } : {})
   });
+}
+
+export async function getOllamaHealth(): Promise<import("./types").OllamaHealthPayload> {
+  return request<import("./types").OllamaHealthPayload>("/api/ai/ollama/health");
+}
+
+export async function streamAIChat(
+  payload: import("./types").AIChatRequestPayload,
+  onToken: (token: string) => void,
+  onComplete: (data: { model?: string; total_duration_ms?: number }) => void,
+  onError: (err: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/api/ai/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || `Stream request failed with status ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error("ReadableStream not supported by browser environment.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+          const jsonStr = trimmed.slice(6);
+          try {
+            const data: import("./types").AIStreamChunkPayload = JSON.parse(jsonStr);
+            if (data.token) {
+              onToken(data.token);
+            }
+            if (data.error) {
+              onError(data.error);
+            }
+            if (data.done) {
+              onComplete({ model: data.model, total_duration_ms: data.total_duration_ms });
+            }
+          } catch {
+            // Ignore parse errors on malformed SSE chunks
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      onComplete({});
+      return;
+    }
+    onError(err.message || "Failed to stream AI response");
+  }
 }
 
 

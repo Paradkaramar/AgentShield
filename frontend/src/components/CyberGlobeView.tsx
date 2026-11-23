@@ -168,8 +168,21 @@ export const CyberGlobeView: React.FC<Props> = ({
     };
     updateSize();
     window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      ro = new ResizeObserver(() => {
+        updateSize();
+      });
+      ro.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateSize);
+      if (ro) ro.disconnect();
+    };
   }, []);
+
 
   // Configure OrbitControls for continuous, smooth rotation and auto-resume
   useEffect(() => {

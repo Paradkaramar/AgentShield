@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, shell, dialog, session, systemP
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const { spawn, exec } = require('child_process');
 
 let mainWindow = null;
@@ -172,6 +173,149 @@ ipcMain.handle('request-microphone-permission', async () => {
     }
   }
   return { granted: true, status: 'granted' };
+});
+
+// IPC Handler: Check FastAPI Backend Status
+ipcMain.handle('get-backend-status', async () => {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:8000/health', (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve({ online: res.statusCode === 200, status: JSON.parse(data), statusCode: res.statusCode });
+        } catch {
+          resolve({ online: res.statusCode === 200, status: data, statusCode: res.statusCode });
+        }
+      });
+    });
+    req.on('error', (err) => {
+      resolve({ online: false, error: err.message });
+    });
+    req.setTimeout(2500, () => {
+      req.destroy();
+      resolve({ online: false, error: 'Request timed out' });
+    });
+  });
+});
+
+// IPC Handler: Check Ollama Local AI Status
+ipcMain.handle('get-ollama-status', async () => {
+  return new Promise((resolve) => {
+    const req = http.get('http://127.0.0.1:11434/api/tags', (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          const models = (parsed.models || []).map(m => m.name || m.model);
+          const hasTargetModel = models.some(m => 
+            m.includes('dolphinlabs/qwen3.5-uncensored') || 
+            m.includes('qwen') || 
+            models.length > 0
+          );
+          resolve({
+            online: res.statusCode === 200,
+            models: models,
+            hasDefaultModel: hasTargetModel,
+            activeModel: models.find(m => m.includes('dolphinlabs/qwen3.5-uncensored')) || models[0] || null,
+            statusCode: res.statusCode
+          });
+        } catch (err) {
+          resolve({ online: false, error: err.message });
+        }
+      });
+    });
+    req.on('error', (err) => {
+      resolve({ online: false, error: err.message });
+    });
+    req.setTimeout(2500, () => {
+      req.destroy();
+      resolve({ online: false, error: 'Request timed out' });
+    });
+  });
+});
+
+// IPC Handler: Device Enrollment via Desktop UI
+ipcMain.handle('enroll-device', async (event, { token, deviceName, consent }) => {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({
+      token: token,
+      device_name: deviceName || os.hostname(),
+      consent_map: consent || {}
+    });
+
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: '/api/endpoint/enroll',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve({ status: 'OK', raw: data });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ status: 'ERROR', message: `Backend connection failed: ${err.message}` });
+    });
+    req.write(postData);
+    req.end();
+  });
+});
+
+// IPC Handler: Toggle Monitoring State (Pause/Resume)
+ipcMain.handle('set-monitoring-state', async (event, { active }) => {
+  return new Promise((resolve) => {
+    let identity = null;
+    if (fs.existsSync(IDENTITY_FILE)) {
+      try {
+        identity = JSON.parse(fs.readFileSync(IDENTITY_FILE, 'utf8'));
+      } catch (e) {
+        identity = null;
+      }
+    }
+    const devId = identity ? identity.device_id : 'dev-primary-desktop';
+    const action = active ? 'RESUME' : 'PAUSE';
+
+    const postData = JSON.stringify({ action: action });
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 8000,
+      path: `/api/endpoint/devices/${devId}/control`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          resolve({ status: 'OK', active: active });
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ status: 'ERROR', message: `Backend connection failed: ${err.message}` });
+    });
+    req.write(postData);
+    req.end();
+  });
 });
 
 app.whenReady().then(() => {

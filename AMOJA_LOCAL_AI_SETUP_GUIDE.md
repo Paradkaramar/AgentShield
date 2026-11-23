@@ -219,3 +219,4 @@ ollama list
 | C: Drive getting low on disk space | Ollama models saving to default AppData | Ensure `$env:OLLAMA_MODELS = "E:\ollama_models"` is set in Windows Environment Variables. |
 | `Permission denied` on Port 8000 | Existing uvicorn instance running | Run `Get-Process python \| Stop-Process -Force`. |
 | Microphone permission denied in browser | Browser security policy | Go to `chrome://settings/content/microphone` and allow `http://localhost:5173`. |
+
